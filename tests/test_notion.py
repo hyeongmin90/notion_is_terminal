@@ -9,6 +9,7 @@ from notion_is_terminal.notion import (
     browser_screenshot_image_ids,
     find_browser_anchors,
     find_runtime_anchors,
+    help_page_children,
     parse_page_id,
     rich_text_payload,
     runtime_blocks_are_in_place,
@@ -200,3 +201,30 @@ def test_browser_screenshot_image_ids_stop_at_next_section():
         {"id": "image-3", "type": "image", "image": {}},
     ]
     assert browser_screenshot_image_ids(children, anchor_id="anchor") == ["image-1", "image-2"]
+
+
+def test_terminal_page_children_are_compact():
+    children = terminal_page_children("screen", "> ")
+    text = " ".join(
+        item.get(item.get("type", ""), {}).get("rich_text", [{}])[0].get("text", {}).get("content", "")
+        for item in children
+        if item.get("type") in {"paragraph", "bulleted_list_item", "heading_2", "callout"}
+        and item.get(item.get("type", ""), {}).get("rich_text")
+    )
+    assert "Quick Commands" in text
+    assert "Browser open" in text
+    assert "Common TUI recipes" not in text
+    assert "Key names and aliases" not in text
+
+
+def test_help_page_contains_agent_commands_and_recovery():
+    children = help_page_children()
+    text = " ".join(
+        item.get(item.get("type", ""), {}).get("rich_text", [{}])[0].get("text", {}).get("content", "")
+        for item in children
+        if item.get("type") in {"paragraph", "bulleted_list_item", "heading_2", "callout"}
+        and item.get(item.get("type", ""), {}).get("rich_text")
+    )
+    assert "For GPT / Agents" in text
+    assert ":b click <observation_id> <x> <y>" in text
+    assert "t4g reinit" in text
