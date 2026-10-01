@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -18,6 +18,8 @@ class NotionSettings:
     input_block_id: str
     page_url: str = ""
     api_version: str = "2026-03-11"
+    browser_status_block_id: str = ""
+    browser_image_block_id: str = ""
 
 
 @dataclass(slots=True)
@@ -37,9 +39,20 @@ class TerminalSettings:
 
 
 @dataclass(slots=True)
+class BrowserSettings:
+    width: int = 1280
+    height: int = 720
+    headless: bool = True
+    timeout_ms: int = 15000
+    settle_ms: int = 350
+    show_cursor_overlay: bool = True
+
+
+@dataclass(slots=True)
 class AppConfig:
     notion: NotionSettings
     terminal: TerminalSettings
+    browser: BrowserSettings = field(default_factory=BrowserSettings)
 
 
 def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
@@ -49,6 +62,7 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
 
     notion_raw = raw.get("notion", {})
     terminal_raw = raw.get("terminal", {})
+    browser_raw = raw.get("browser", {})
 
     token = os.environ.get("NOTION_TOKEN") or notion_raw.get("token", "")
     if not token:
@@ -61,6 +75,8 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         input_block_id=_required(notion_raw, "input_block_id"),
         page_url=notion_raw.get("page_url", ""),
         api_version=notion_raw.get("api_version", "2026-03-11"),
+        browser_status_block_id=str(notion_raw.get("browser_status_block_id", "")),
+        browser_image_block_id=str(notion_raw.get("browser_image_block_id", "")),
     )
 
     terminal = TerminalSettings(
@@ -78,8 +94,18 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         source_bashrc=bool(terminal_raw.get("source_bashrc", True)),
     )
 
+    browser = BrowserSettings(
+        width=int(browser_raw.get("width", 1280)),
+        height=int(browser_raw.get("height", 720)),
+        headless=bool(browser_raw.get("headless", True)),
+        timeout_ms=int(browser_raw.get("timeout_ms", 15000)),
+        settle_ms=int(browser_raw.get("settle_ms", 350)),
+        show_cursor_overlay=bool(browser_raw.get("show_cursor_overlay", True)),
+    )
+
     _validate_terminal(terminal)
-    return AppConfig(notion=notion, terminal=terminal)
+    _validate_browser(browser)
+    return AppConfig(notion=notion, terminal=terminal, browser=browser)
 
 
 def write_config(config: AppConfig, path: Path | str = DEFAULT_CONFIG_PATH) -> Path:
@@ -95,6 +121,8 @@ def write_config(config: AppConfig, path: Path | str = DEFAULT_CONFIG_PATH) -> P
             f"terminal_block_id = {_toml_string(config.notion.terminal_block_id)}",
             f"input_block_id = {_toml_string(config.notion.input_block_id)}",
             f"page_url = {_toml_string(config.notion.page_url)}",
+            f"browser_status_block_id = {_toml_string(config.notion.browser_status_block_id)}",
+            f"browser_image_block_id = {_toml_string(config.notion.browser_image_block_id)}",
             "",
             "[terminal]",
             f"shell = {_toml_string(config.terminal.shell)}",
@@ -109,6 +137,14 @@ def write_config(config: AppConfig, path: Path | str = DEFAULT_CONFIG_PATH) -> P
             f"health_check_interval = {config.terminal.health_check_interval}",
             f"show_cursor = {'true' if config.terminal.show_cursor else 'false'}",
             f"source_bashrc = {'true' if config.terminal.source_bashrc else 'false'}",
+            "",
+            "[browser]",
+            f"width = {config.browser.width}",
+            f"height = {config.browser.height}",
+            f"headless = {'true' if config.browser.headless else 'false'}",
+            f"timeout_ms = {config.browser.timeout_ms}",
+            f"settle_ms = {config.browser.settle_ms}",
+            f"show_cursor_overlay = {'true' if config.browser.show_cursor_overlay else 'false'}",
             "",
         ]
     )
@@ -143,6 +179,17 @@ def _validate_terminal(settings: TerminalSettings) -> None:
         raise ValueError("terminal.refresh_interval must be >= 0.5 seconds")
     if settings.health_check_interval < 3.0:
         raise ValueError("terminal.health_check_interval must be >= 3.0 seconds")
+
+
+def _validate_browser(settings: BrowserSettings) -> None:
+    if settings.width < 320 or settings.width > 3840:
+        raise ValueError("browser.width must be between 320 and 3840")
+    if settings.height < 240 or settings.height > 2160:
+        raise ValueError("browser.height must be between 240 and 2160")
+    if settings.timeout_ms < 1000:
+        raise ValueError("browser.timeout_ms must be >= 1000")
+    if settings.settle_ms < 0 or settings.settle_ms > 10000:
+        raise ValueError("browser.settle_ms must be between 0 and 10000")
 
 
 def _toml_string(value: str) -> str:
