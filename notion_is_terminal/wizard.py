@@ -36,6 +36,7 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         cwd=cwd,
         user=user,
         host=host,
+        input_prompt="> ",
         columns=columns,
         rows=rows,
         poll_interval=poll_interval,
@@ -44,7 +45,6 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         show_cursor=True,
         source_bashrc=True,
     )
-    prompt = f"{user}@{host}:{cwd}$ "
 
     print("\nChecking Notion access and creating page...")
     with NotionClient(token) as notion:
@@ -53,7 +53,7 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
             parent_page_id=parent_page_id,
             title=title,
             terminal_text="notion_is_terminal\n\nLocal PTY is not connected yet. Run: notion-terminal run",
-            input_text=prompt,
+            input_text=terminal.input_prompt,
         )
 
     config = AppConfig(
@@ -71,7 +71,7 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
     print("\n✓ Notion connection verified")
     print("✓ Terminal page and built-in controls guide created")
     print("✓ Terminal code block created")
-    print("✓ Input code block created")
+    print("✓ Input code block created with compact '> ' prompt")
     print("✓ Runtime block self-healing enabled (10 second health check)")
     print(f"✓ Config written: {written}")
     if created.page_url:
