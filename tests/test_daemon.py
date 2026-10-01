@@ -8,10 +8,10 @@ def test_sanitize_terminal_for_notion_leaves_normal_text_unchanged():
 def test_sanitize_terminal_for_notion_breaks_markdown_fences():
     value = sanitize_terminal_for_notion("before ```python after")
     assert "```" not in value
-    assert value.replace("\u200b", "") == "before ```python after"
+    assert value.replace("\u00a0", "") == "before ```python after"
 
 
 def test_sanitize_terminal_for_notion_breaks_long_backtick_runs():
     value = sanitize_terminal_for_notion("``````")
     assert "```" not in value
-    assert value.replace("\u200b", "") == "``````"
+    assert value.replace("\u00a0", "") == "``````"
