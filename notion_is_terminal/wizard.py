@@ -57,6 +57,17 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
             terminal_text="notion_is_terminal\n\nLocal PTY is not connected yet. Run: notion-terminal run",
             input_text=terminal.input_prompt,
         )
+        vision_page = notion.ensure_browser_vision_page(
+            parent_page_id=created.page_id,
+            page_id="",
+            block_id="",
+            idle_text=(
+                "status: idle\n"
+                "mime: image/jpeg\n"
+                "encoding: base64\n"
+                "data_base64:\n"
+            ),
+        )
         browser_blocks = notion.ensure_browser_blocks(
             page_id=created.page_id,
             status_block_id="",
@@ -65,6 +76,7 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
                 "status: idle\n"
                 "browser: not started\n"
                 f"viewport: {browser.width}x{browser.height}\n"
+                f"vision_page_url: {vision_page.page_url}\n"
                 "hint: :b goto <url> or :b shot\n"
             ),
         )
@@ -78,6 +90,9 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
             page_url=created.page_url,
             browser_status_block_id=browser_blocks.status_block_id,
             browser_image_block_id=browser_blocks.image_block_id,
+            browser_vision_page_id=vision_page.page_id,
+            browser_vision_block_id=vision_page.block_id,
+            browser_vision_page_url=vision_page.page_url,
         ),
         terminal=terminal,
         browser=browser,
@@ -89,6 +104,7 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
     print("✓ Terminal code block created")
     print("✓ Input code block created with compact '> ' prompt")
     print("✓ Browser Status / Browser Screenshot surface created")
+    print("✓ Browser Vision Payload child page created")
     print("✓ Runtime block self-healing enabled (10 second health check)")
     print(f"✓ Config written: {written}")
     if created.page_url:
