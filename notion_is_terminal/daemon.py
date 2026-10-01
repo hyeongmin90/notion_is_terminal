@@ -46,6 +46,7 @@ class TerminalDaemon:
 
             self._health_check()
             self._ensure_browser_blocks()
+            self._reset_browser_surface()
             self._reset_input()
             self._write_terminal(force=True)
 
@@ -169,13 +170,16 @@ class TerminalDaemon:
         try:
             observation = self.browser.execute(command)
             self._publish_browser_observation(observation)
-        except BrowserError as exc:
-            self._set_browser_status(
-                "status: failed\n"
-                f"command: {command}\n"
-                f"error: {exc}\n"
-                f"viewport: {self.config.browser.width}x{self.config.browser.height}\n"
-            )
+        except (BrowserError, NotionError) as exc:
+            try:
+                self._set_browser_status(
+                    "status: failed\n"
+                    f"command: {command}\n"
+                    f"error: {exc}\n"
+                    f"viewport: {self.config.browser.width}x{self.config.browser.height}\n"
+                )
+            except NotionError as status_exc:
+                print(f"[notion] browser failure status update failed: {status_exc}")
             raise
 
     def _publish_browser_observation(self, observation: BrowserObservation) -> None:
@@ -203,6 +207,16 @@ class TerminalDaemon:
             f"cursor: {cursor}\n"
             f"created_at: {observation.created_at}\n"
         )
+
+    def _reset_browser_surface(self) -> None:
+        try:
+            removed = self.notion.clear_browser_images(page_id=self.config.notion.page_id)
+            if removed or self.config.notion.browser_image_block_id:
+                self.config.notion.browser_image_block_id = ""
+                write_config(self.config, self.config_path)
+            self._set_browser_status(self._browser_idle_status())
+        except NotionError as exc:
+            print(f"[notion] browser surface reset failed: {exc}")
 
     def _browser_idle_status(self) -> str:
         return (
