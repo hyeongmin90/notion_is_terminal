@@ -1,0 +1,284 @@
+from __future__ import annotations
+
+import re
+import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
+
+from .config import BrowserSettings
+
+
+class BrowserError(RuntimeError):
+    pass
+
+
+@dataclass(slots=True)
+class BrowserObservation:
+    observation_id: str
+    screenshot: bytes
+    url: str
+    title: str
+    width: int
+    height: int
+    scroll_x: float
+    scroll_y: float
+    cursor_x: float | None
+    cursor_y: float | None
+    created_at: str
+
+
+class BrowserController:
+    """Persistent Playwright browser controlled with viewport-relative CSS pixels."""
+
+    def __init__(self, settings: BrowserSettings) -> None:
+        self.settings = settings
+        self._playwright = None
+        self._browser = None
+        self._context = None
+        self._page = None
+        self._counter = 0
+        self._observation_id = ""
+        self._cursor_x: float | None = None
+        self._cursor_y: float | None = None
+
+    @property
+    def started(self) -> bool:
+        return self._page is not None
+
+    @property
+    def observation_id(self) -> str:
+        return self._observation_id
+
+    def start(self) -> None:
+        if self.started:
+            return
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError as exc:
+            raise BrowserError(
+                "Playwright is not installed. Run: pip install -e . && playwright install chromium"
+            ) from exc
+
+        try:
+            self._playwright = sync_playwright().start()
+            self._browser = self._playwright.chromium.launch(headless=self.settings.headless)
+            self._context = self._browser.new_context(
+                viewport={"width": self.settings.width, "height": self.settings.height},
+                device_scale_factor=1,
+            )
+            self._page = self._context.new_page()
+            self._page.set_default_timeout(self.settings.timeout_ms)
+        except Exception as exc:
+            self.close()
+            message = str(exc)
+            if "Executable doesn't exist" in message or "playwright install" in message.lower():
+                raise BrowserError(
+                    "Chromium for Playwright is not installed. Run: playwright install chromium"
+                ) from exc
+            raise BrowserError(f"Could not start Playwright Chromium: {exc}") from exc
+
+    def close(self) -> None:
+        for obj in (self._context, self._browser):
+            if obj is not None:
+                try:
+                    obj.close()
+                except Exception:
+                    pass
+        self._page = None
+        self._context = None
+        self._browser = None
+        if self._playwright is not None:
+            try:
+                self._playwright.stop()
+            except Exception:
+                pass
+        self._playwright = None
+
+    def execute(self, command: str) -> BrowserObservation:
+        self.start()
+        assert self._page is not None
+
+        name, args = parse_browser_command(command)
+
+        try:
+            if name in {"goto", "open"}:
+                if len(args) != 1:
+                    raise BrowserError("Usage: :b goto <url>")
+                self._page.goto(args[0], wait_until="domcontentloaded")
+                self._cursor_x = None
+                self._cursor_y = None
+
+            elif name == "shot":
+                if args:
+                    raise BrowserError("Usage: :b shot")
+
+            elif name == "click":
+                obs_id, coords = self._coordinate_args(args, 2, "click <observation_id> <x> <y>")
+                self._assert_observation(obs_id)
+                x, y = coords
+                self._page.mouse.click(x, y)
+                self._cursor_x, self._cursor_y = x, y
+
+            elif name == "move":
+                obs_id, coords = self._coordinate_args(args, 2, "move <observation_id> <x> <y>")
+                self._assert_observation(obs_id)
+                x, y = coords
+                self._page.mouse.move(x, y)
+                self._cursor_x, self._cursor_y = x, y
+
+            elif name == "drag":
+                obs_id, coords = self._coordinate_args(
+                    args, 4, "drag <observation_id> <x1> <y1> <x2> <y2>"
+                )
+                self._assert_observation(obs_id)
+                x1, y1, x2, y2 = coords
+                self._page.mouse.move(x1, y1)
+                self._page.mouse.down()
+                self._page.mouse.move(x2, y2, steps=8)
+                self._page.mouse.up()
+                self._cursor_x, self._cursor_y = x2, y2
+
+            elif name == "scroll":
+                if len(args) != 2:
+                    raise BrowserError("Usage: :b scroll <dx> <dy>")
+                dx, dy = map(_number, args)
+                self._page.mouse.wheel(dx, dy)
+
+            elif name == "type":
+                value = command.split(maxsplit=1)[1] if len(command.split(maxsplit=1)) == 2 else ""
+                if not value:
+                    raise BrowserError("Usage: :b type <text>")
+                self._page.keyboard.insert_text(value)
+
+            elif name == "key":
+                if len(args) != 1:
+                    raise BrowserError("Usage: :b key <key>")
+                self._page.keyboard.press(args[0])
+
+            elif name == "back":
+                if args:
+                    raise BrowserError("Usage: :b back")
+                self._page.go_back(wait_until="domcontentloaded")
+
+            elif name == "reload":
+                if args:
+                    raise BrowserError("Usage: :b reload")
+                self._page.reload(wait_until="domcontentloaded")
+
+            else:
+                raise BrowserError(
+                    "Unknown browser command. Supported: goto/open, shot, click, move, drag, "
+                    "scroll, type, key, back, reload"
+                )
+        except BrowserError:
+            raise
+        except Exception as exc:
+            raise BrowserError(f"Browser action failed: {exc}") from exc
+
+        if self.settings.settle_ms > 0:
+            self._page.wait_for_timeout(self.settings.settle_ms)
+        return self.observe()
+
+    def observe(self) -> BrowserObservation:
+        self.start()
+        assert self._page is not None
+
+        self._draw_cursor_overlay()
+        png = self._page.screenshot(type="png", full_page=False, scale="css")
+        scroll = self._page.evaluate("() => ({x: window.scrollX, y: window.scrollY})")
+
+        self._counter += 1
+        stamp = datetime.now(timezone.utc)
+        self._observation_id = f"obs_{stamp.strftime('%Y%m%dT%H%M%SZ')}_{self._counter:04d}"
+
+        return BrowserObservation(
+            observation_id=self._observation_id,
+            screenshot=png,
+            url=self._page.url,
+            title=self._page.title(),
+            width=self.settings.width,
+            height=self.settings.height,
+            scroll_x=float(scroll.get("x", 0)),
+            scroll_y=float(scroll.get("y", 0)),
+            cursor_x=self._cursor_x,
+            cursor_y=self._cursor_y,
+            created_at=stamp.isoformat(),
+        )
+
+    def _assert_observation(self, observation_id: str) -> None:
+        if not self._observation_id:
+            raise BrowserError("No browser observation exists yet. Run :b shot first.")
+        if observation_id != self._observation_id:
+            raise BrowserError(
+                f"STALE_OBSERVATION: expected {self._observation_id}, got {observation_id}. "
+                "Read the latest Browser Status and use its observation_id."
+            )
+
+    def _coordinate_args(
+        self,
+        args: list[str],
+        count: int,
+        usage: str,
+    ) -> tuple[str, list[float]]:
+        if len(args) != count + 1:
+            raise BrowserError(f"Usage: :b {usage}")
+        obs_id = args[0]
+        values = [_number(value) for value in args[1:]]
+        for index in range(0, len(values), 2):
+            x, y = values[index], values[index + 1]
+            if x < 0 or x > self.settings.width or y < 0 or y > self.settings.height:
+                raise BrowserError(
+                    f"Coordinate ({x}, {y}) is outside viewport "
+                    f"{self.settings.width}x{self.settings.height}."
+                )
+        return obs_id, values
+
+    def _draw_cursor_overlay(self) -> None:
+        if not self.settings.show_cursor_overlay or self._cursor_x is None or self._cursor_y is None:
+            return
+        assert self._page is not None
+        self._page.evaluate(
+            """([x, y]) => {
+                let marker = document.getElementById('__nit_cursor_overlay__');
+                if (!marker) {
+                    marker = document.createElement('div');
+                    marker.id = '__nit_cursor_overlay__';
+                    Object.assign(marker.style, {
+                        position: 'fixed',
+                        zIndex: '2147483647',
+                        width: '14px',
+                        height: '14px',
+                        border: '2px solid #ff3355',
+                        borderRadius: '50%',
+                        background: 'rgba(255,51,85,0.2)',
+                        pointerEvents: 'none',
+                        transform: 'translate(-50%, -50%)',
+                        boxSizing: 'border-box'
+                    });
+                    document.documentElement.appendChild(marker);
+                }
+                marker.style.left = x + 'px';
+                marker.style.top = y + 'px';
+            }""",
+            [self._cursor_x, self._cursor_y],
+        )
+
+
+def parse_browser_command(command: str) -> tuple[str, list[str]]:
+    value = command.strip()
+    if not value:
+        raise BrowserError(
+            "Usage: :b <goto|shot|click|move|drag|scroll|type|key|back|reload> ..."
+        )
+    parts = value.split()
+    return parts[0].lower(), parts[1:]
+
+
+def _number(value: str) -> float:
+    try:
+        number = float(value)
+    except ValueError as exc:
+        raise BrowserError(f"Expected a number, got: {value}") from exc
+    if not (-1_000_000 <= number <= 1_000_000):
+        raise BrowserError(f"Coordinate/scroll value is unreasonable: {value}")
+    return number
