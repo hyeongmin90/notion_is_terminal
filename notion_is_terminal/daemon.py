@@ -171,7 +171,7 @@ class TerminalDaemon:
         try:
             observation = self.browser.execute(command)
             self._publish_browser_observation(observation)
-        except (BrowserError, NotionError) as exc:
+        except Exception as exc:
             try:
                 self._set_browser_status(
                     "status: failed\n"
@@ -179,7 +179,7 @@ class TerminalDaemon:
                     f"error: {exc}\n"
                     f"viewport: {self.config.browser.width}x{self.config.browser.height}\n"
                 )
-            except NotionError as status_exc:
+            except Exception as status_exc:
                 print(f"[notion] browser failure status update failed: {status_exc}")
             raise
 
