@@ -5,15 +5,15 @@ import os
 import shutil
 from pathlib import Path
 
-from .config import AppConfig, DEFAULT_CONFIG_PATH, NotionSettings, TerminalSettings, write_config
+from .config import AppConfig, BrowserSettings, DEFAULT_CONFIG_PATH, NotionSettings, TerminalSettings, write_config
 from .notion import NotionClient, parse_page_id
 
 
 def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
     print("notion_is_terminal setup")
     print(
-        "Creates one Notion terminal page with help text plus exactly two "
-        "runtime code blocks: Terminal + Input.\n"
+        "Creates one Notion page with a persistent terminal plus a Playwright "
+        "browser observation surface for GPT.\n"
     )
 
     token = getpass.getpass("Notion integration token: ").strip()
@@ -46,6 +46,8 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         source_bashrc=True,
     )
 
+    browser = BrowserSettings()
+
     print("\nChecking Notion access and creating page...")
     with NotionClient(token) as notion:
         notion.get_page(parent_page_id)
@@ -55,6 +57,17 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
             terminal_text="notion_is_terminal\n\nLocal PTY is not connected yet. Run: notion-terminal run",
             input_text=terminal.input_prompt,
         )
+        browser_blocks = notion.ensure_browser_blocks(
+            page_id=created.page_id,
+            status_block_id="",
+            image_block_id="",
+            status_text=(
+                "status: idle\n"
+                "browser: not started\n"
+                f"viewport: {browser.width}x{browser.height}\n"
+                "hint: :b goto <url> or :b shot\n"
+            ),
+        )
 
     config = AppConfig(
         notion=NotionSettings(
@@ -63,8 +76,11 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
             terminal_block_id=created.terminal_block_id,
             input_block_id=created.input_block_id,
             page_url=created.page_url,
+            browser_status_block_id=browser_blocks.status_block_id,
+            browser_image_block_id=browser_blocks.image_block_id,
         ),
         terminal=terminal,
+        browser=browser,
     )
     written = write_config(config, config_path)
 
@@ -72,6 +88,7 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
     print("✓ Terminal page and built-in controls guide created")
     print("✓ Terminal code block created")
     print("✓ Input code block created with compact '> ' prompt")
+    print("✓ Browser Status / Browser Screenshot surface created")
     print("✓ Runtime block self-healing enabled (10 second health check)")
     print(f"✓ Config written: {written}")
     if created.page_url:
