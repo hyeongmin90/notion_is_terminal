@@ -18,7 +18,7 @@ from .background import (
 from .config import DEFAULT_CONFIG_PATH, load_config
 from .daemon import TerminalDaemon
 from .notion import NotionClient, NotionError
-from .wizard import run_init
+from .wizard import run_init, run_reinit
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -29,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=__version__)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    for name in ("init", "run", "doctor"):
+    for name in ("init", "reinit", "run", "doctor"):
         command = sub.add_parser(name)
         command.add_argument(
             "--config",
@@ -71,6 +71,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "init":
             run_init(args.config)
+            return 0
+
+        if args.command == "reinit":
+            run_reinit(args.config)
             return 0
 
         if args.command == "run":
