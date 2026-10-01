@@ -44,6 +44,12 @@ class RuntimeBlocks:
     recreated: bool = False
 
 
+@dataclass(slots=True)
+class RuntimeAnchors:
+    terminal_anchor_id: str
+    input_anchor_id: str
+
+
 class NotionClient:
     def __init__(self, token: str, *, api_version: str = "2026-03-11", timeout: float = 15.0) -> None:
         self._client = httpx.Client(
@@ -71,6 +77,22 @@ class NotionClient:
 
     def get_block(self, block_id: str) -> dict[str, Any]:
         return self._request("GET", f"/blocks/{block_id}")
+
+    def get_block_children(self, block_id: str) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        start_cursor: str | None = None
+
+        while True:
+            path = f"/blocks/{block_id}/children?page_size=100"
+            if start_cursor:
+                path += f"&start_cursor={start_cursor}"
+            response = self._request("GET", path)
+            results.extend(response.get("results", []))
+            if not response.get("has_more"):
+                return results
+            start_cursor = response.get("next_cursor")
+            if not start_cursor:
+                return results
 
     def get_code_text(self, block_id: str) -> str:
         block = self.get_block(block_id)
@@ -132,16 +154,29 @@ class NotionClient:
 
         terminal = self._try_get_block(terminal_block_id)
         input_block = self._try_get_block(input_block_id)
+        children = self.get_block_children(page_id)
+        anchors = find_runtime_anchors(children)
 
-        if block_is_usable_code(terminal) and block_is_usable_code(input_block):
+        both_usable = block_is_usable_code(terminal) and block_is_usable_code(input_block)
+        in_place = bool(
+            anchors
+            and runtime_blocks_are_in_place(
+                children,
+                terminal_anchor_id=anchors.terminal_anchor_id,
+                input_anchor_id=anchors.input_anchor_id,
+                terminal_block_id=terminal_block_id,
+                input_block_id=input_block_id,
+            )
+        )
+        if both_usable and in_place:
             return RuntimeBlocks(
                 terminal_block_id=terminal_block_id,
                 input_block_id=input_block_id,
                 recreated=False,
             )
 
-        # Keep the UI unambiguous: when either runtime block is damaged, retire
-        # whichever old runtime block remains and create a fresh matched pair.
+        # Retire any surviving runtime blocks before recreating them. This also
+        # migrates older self-healed pairs that were appended at the page end.
         for block_id, block in (
             (terminal_block_id, terminal),
             (input_block_id, input_block),
@@ -152,14 +187,62 @@ class NotionClient:
                 except NotionError:
                     pass
 
-        created = self.append_runtime_blocks(
+        if anchors:
+            return self.restore_runtime_blocks_at_anchors(
+                page_id=page_id,
+                anchors=anchors,
+                terminal_text=terminal_text,
+                input_text=input_text,
+            )
+
+        # Legacy/fallback path if a user also deleted or substantially changed
+        # the stable headings/description blocks.
+        return self.append_runtime_blocks(
             page_id=page_id,
             terminal_text=terminal_text,
             input_text=input_text,
         )
+
+    def restore_runtime_blocks_at_anchors(
+        self,
+        *,
+        page_id: str,
+        anchors: RuntimeAnchors,
+        terminal_text: str,
+        input_text: str,
+    ) -> RuntimeBlocks:
+        terminal_response = self._request(
+            "PATCH",
+            f"/blocks/{page_id}/children",
+            json={
+                "children": [code_block_payload(terminal_text, language="plain text")],
+                "position": {
+                    "type": "after_block",
+                    "after_block": {"id": anchors.terminal_anchor_id},
+                },
+            },
+        )
+        input_response = self._request(
+            "PATCH",
+            f"/blocks/{page_id}/children",
+            json={
+                "children": [code_block_payload(input_text, language="bash")],
+                "position": {
+                    "type": "after_block",
+                    "after_block": {"id": anchors.input_anchor_id},
+                },
+            },
+        )
+
+        try:
+            terminal_id = terminal_response["results"][0]["id"]
+            input_id = input_response["results"][0]["id"]
+        except (KeyError, IndexError) as exc:
+            raise NotionError("Notion did not return recreated runtime block IDs.") from exc
+
         return RuntimeBlocks(
-            terminal_block_id=created.terminal_block_id,
-            input_block_id=created.input_block_id,
+            terminal_block_id=terminal_id,
+            input_block_id=input_id,
             recreated=True,
         )
 
@@ -173,8 +256,13 @@ class NotionClient:
         children = self._request("PATCH", f"/blocks/{page_id}/children", json={
             "children": [
                 heading_payload("Terminal"),
+                paragraph_payload("Live PTY screen. Do not edit this block manually."),
                 code_block_payload(terminal_text, language="plain text"),
                 heading_payload("Input"),
+                paragraph_payload(
+                    "Input uses a compact > prompt. Normal text is sent after Enter twice. "
+                    "For TUI programs, use the key/control commands below when a real key press is required."
+                ),
                 code_block_payload(input_text, language="bash"),
                 callout_payload("Runtime blocks were automatically recreated by notion_is_terminal.", "♻️"),
             ]
@@ -243,6 +331,79 @@ def block_is_usable_code(block: dict[str, Any] | None) -> bool:
         and not block.get("archived", False)
         and not block.get("in_trash", False)
     )
+
+
+def block_plain_text(block: dict[str, Any]) -> str:
+    block_type = block.get("type")
+    if not block_type:
+        return ""
+    content = block.get(block_type, {})
+    return "".join(item.get("plain_text", "") for item in content.get("rich_text", []))
+
+
+def find_runtime_anchors(children: list[dict[str, Any]]) -> RuntimeAnchors | None:
+    terminal_anchor: str | None = None
+    input_anchor: str | None = None
+    section: str | None = None
+
+    for block in children:
+        if block.get("archived") or block.get("in_trash"):
+            continue
+
+        if block.get("type") == "heading_2":
+            title = block_plain_text(block).strip()
+            if title == "Terminal" and terminal_anchor is None:
+                section = "terminal"
+                continue
+            if title == "Input" and input_anchor is None:
+                section = "input"
+                continue
+            if section in {"terminal", "input"}:
+                section = None
+
+        if block.get("type") == "paragraph":
+            if section == "terminal" and terminal_anchor is None:
+                terminal_anchor = block.get("id")
+                section = None
+            elif section == "input" and input_anchor is None:
+                input_anchor = block.get("id")
+                section = None
+
+        if terminal_anchor and input_anchor:
+            return RuntimeAnchors(terminal_anchor, input_anchor)
+
+    return None
+
+
+def runtime_blocks_are_in_place(
+    children: list[dict[str, Any]],
+    *,
+    terminal_anchor_id: str,
+    input_anchor_id: str,
+    terminal_block_id: str,
+    input_block_id: str,
+) -> bool:
+    active = [
+        block for block in children
+        if not block.get("archived") and not block.get("in_trash")
+    ]
+    ids = [block.get("id") for block in active]
+
+    try:
+        terminal_anchor_index = ids.index(terminal_anchor_id)
+        input_anchor_index = ids.index(input_anchor_id)
+    except ValueError:
+        return False
+
+    terminal_ok = (
+        terminal_anchor_index + 1 < len(ids)
+        and ids[terminal_anchor_index + 1] == terminal_block_id
+    )
+    input_ok = (
+        input_anchor_index + 1 < len(ids)
+        and ids[input_anchor_index + 1] == input_block_id
+    )
+    return terminal_ok and input_ok
 
 
 def terminal_page_children(terminal_text: str, input_text: str) -> list[dict[str, Any]]:
