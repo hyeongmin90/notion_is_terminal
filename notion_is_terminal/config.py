@@ -20,6 +20,9 @@ class NotionSettings:
     api_version: str = "2026-03-11"
     browser_status_block_id: str = ""
     browser_image_block_id: str = ""
+    browser_vision_page_id: str = ""
+    browser_vision_block_id: str = ""
+    browser_vision_page_url: str = ""
 
 
 @dataclass(slots=True)
@@ -46,6 +49,9 @@ class BrowserSettings:
     timeout_ms: int = 15000
     settle_ms: int = 350
     show_cursor_overlay: bool = True
+    vision_enabled: bool = True
+    vision_quality: int = 35
+    vision_max_base64_chars: int = 160000
 
 
 @dataclass(slots=True)
@@ -77,6 +83,9 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         api_version=notion_raw.get("api_version", "2026-03-11"),
         browser_status_block_id=str(notion_raw.get("browser_status_block_id", "")),
         browser_image_block_id=str(notion_raw.get("browser_image_block_id", "")),
+        browser_vision_page_id=str(notion_raw.get("browser_vision_page_id", "")),
+        browser_vision_block_id=str(notion_raw.get("browser_vision_block_id", "")),
+        browser_vision_page_url=str(notion_raw.get("browser_vision_page_url", "")),
     )
 
     terminal = TerminalSettings(
@@ -101,6 +110,9 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         timeout_ms=int(browser_raw.get("timeout_ms", 15000)),
         settle_ms=int(browser_raw.get("settle_ms", 350)),
         show_cursor_overlay=bool(browser_raw.get("show_cursor_overlay", True)),
+        vision_enabled=bool(browser_raw.get("vision_enabled", True)),
+        vision_quality=int(browser_raw.get("vision_quality", 35)),
+        vision_max_base64_chars=int(browser_raw.get("vision_max_base64_chars", 160000)),
     )
 
     _validate_terminal(terminal)
@@ -123,6 +135,9 @@ def write_config(config: AppConfig, path: Path | str = DEFAULT_CONFIG_PATH) -> P
             f"page_url = {_toml_string(config.notion.page_url)}",
             f"browser_status_block_id = {_toml_string(config.notion.browser_status_block_id)}",
             f"browser_image_block_id = {_toml_string(config.notion.browser_image_block_id)}",
+            f"browser_vision_page_id = {_toml_string(config.notion.browser_vision_page_id)}",
+            f"browser_vision_block_id = {_toml_string(config.notion.browser_vision_block_id)}",
+            f"browser_vision_page_url = {_toml_string(config.notion.browser_vision_page_url)}",
             "",
             "[terminal]",
             f"shell = {_toml_string(config.terminal.shell)}",
@@ -145,6 +160,9 @@ def write_config(config: AppConfig, path: Path | str = DEFAULT_CONFIG_PATH) -> P
             f"timeout_ms = {config.browser.timeout_ms}",
             f"settle_ms = {config.browser.settle_ms}",
             f"show_cursor_overlay = {'true' if config.browser.show_cursor_overlay else 'false'}",
+            f"vision_enabled = {'true' if config.browser.vision_enabled else 'false'}",
+            f"vision_quality = {config.browser.vision_quality}",
+            f"vision_max_base64_chars = {config.browser.vision_max_base64_chars}",
             "",
         ]
     )
@@ -190,6 +208,10 @@ def _validate_browser(settings: BrowserSettings) -> None:
         raise ValueError("browser.timeout_ms must be >= 1000")
     if settings.settle_ms < 0 or settings.settle_ms > 10000:
         raise ValueError("browser.settle_ms must be between 0 and 10000")
+    if settings.vision_quality < 1 or settings.vision_quality > 100:
+        raise ValueError("browser.vision_quality must be between 1 and 100")
+    if settings.vision_max_base64_chars < 10000 or settings.vision_max_base64_chars > 180000:
+        raise ValueError("browser.vision_max_base64_chars must be between 10000 and 180000")
 
 
 def _toml_string(value: str) -> str:
