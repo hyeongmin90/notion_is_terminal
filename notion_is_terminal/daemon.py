@@ -26,14 +26,15 @@ class TerminalDaemon:
         self._last_terminal_written = ""
         self._dirty = True
 
+    @property
+    def input_prompt(self) -> str:
+        return self.config.terminal.input_prompt
+
     def run(self) -> None:
         try:
             self.session.start()
             self.selector.register(self.session.fileno(), selectors.EVENT_READ)
 
-            # Validate the configured block IDs before the first write. If a
-            # user deleted one of them while the daemon was offline, recover
-            # automatically and persist the new IDs.
             self._health_check()
             self._reset_input()
             self._write_terminal(force=True)
@@ -92,11 +93,6 @@ class TerminalDaemon:
             print(f"[notion] input poll failed: {exc}")
             return
 
-        current_prompt = self.session.prompt()
-        if text == self._last_input_written and current_prompt != self._last_input_written:
-            self._set_input(current_prompt)
-            return
-
         action, should_reset = extract_submission(text, self._last_input_written)
         if action is None:
             return
@@ -133,7 +129,7 @@ class TerminalDaemon:
         raise ValueError(f"Unhandled input action: {action.kind}")
 
     def _reset_input(self) -> None:
-        self._set_input(self.session.prompt())
+        self._set_input(self.input_prompt)
 
     def _set_input(self, text: str) -> None:
         try:
@@ -194,7 +190,7 @@ class TerminalDaemon:
 
     def _ensure_runtime_blocks(self) -> None:
         terminal_text = self.session.render()
-        input_text = self.session.prompt()
+        input_text = self.input_prompt
         blocks = self.notion.ensure_runtime_blocks(
             page_id=self.config.notion.page_id,
             terminal_block_id=self.config.notion.terminal_block_id,
