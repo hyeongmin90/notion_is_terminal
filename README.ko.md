@@ -23,7 +23,12 @@ Notion은 GPT와 로컬 daemon이 공유하는 입출력 화면이고, 실제 �
 
 ## 데모
 
-<video src="https://github.com/user-attachments/assets/b4f553b5-d72d-4a52-9a13-f1684ed406f3" width="640" controls></video>
+<details>
+<summary>▶ 데모 영상 보기</summary>
+
+https://github.com/user-attachments/assets/b4f553b5-d72d-4a52-9a13-f1684ed406f3
+
+</details>
 
 > [!CAUTION]
 > 이 프로젝트는 **sandbox가 아닙니다.** Input 블록에 입력된 내용은 daemon을 실행한 Linux 사용자의 권한으로 실행됩니다. root 계정으로 실행하지 말고, 비밀번호·API Key·SSH Key 같은 비밀정보를 Notion을 통해 입력하지 마세요.
