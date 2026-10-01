@@ -5,6 +5,7 @@ import signal
 import time
 from pathlib import Path
 
+from .browser import BrowserController, BrowserError, BrowserObservation
 from .config import AppConfig, DEFAULT_CONFIG_PATH, write_config
 from .notion import NotionClient, NotionError
 from .protocol import InputAction, InputKind, extract_submission
@@ -22,6 +23,7 @@ class TerminalDaemon:
         self.config_path = Path(config_path).expanduser()
         self.notion = NotionClient(config.notion.token, api_version=config.notion.api_version)
         self.session = PTYSession(config.terminal)
+        self.browser = BrowserController(config.browser)
         self.selector = selectors.DefaultSelector()
         self._last_input_written = ""
         self._last_terminal_written = ""
@@ -43,6 +45,7 @@ class TerminalDaemon:
             self.selector.register(self.session.fileno(), selectors.EVENT_READ)
 
             self._health_check()
+            self._ensure_browser_blocks()
             self._reset_input()
             self._write_terminal(force=True)
 
@@ -104,6 +107,7 @@ class TerminalDaemon:
             try:
                 self.selector.close()
             finally:
+                self.browser.close()
                 self.session.close()
                 self.notion.close()
 
@@ -150,7 +154,96 @@ class TerminalDaemon:
             self.session.resize(action.columns, action.rows)
             self._dirty = True
             return
+        if action.kind is InputKind.BROWSER:
+            self._handle_browser(action.value)
+            return
         raise ValueError(f"Unhandled input action: {action.kind}")
+
+    def _handle_browser(self, command: str) -> None:
+        self._ensure_browser_blocks()
+        self._set_browser_status(
+            "status: running\n"
+            f"command: {command}\n"
+            f"viewport: {self.config.browser.width}x{self.config.browser.height}\n"
+        )
+        try:
+            observation = self.browser.execute(command)
+            self._publish_browser_observation(observation)
+        except BrowserError as exc:
+            self._set_browser_status(
+                "status: failed\n"
+                f"command: {command}\n"
+                f"error: {exc}\n"
+                f"viewport: {self.config.browser.width}x{self.config.browser.height}\n"
+            )
+            raise
+
+    def _publish_browser_observation(self, observation: BrowserObservation) -> None:
+        new_image_id = self.notion.replace_browser_image(
+            page_id=self.config.notion.page_id,
+            old_image_block_id=self.config.notion.browser_image_block_id,
+            image_bytes=observation.screenshot,
+            caption=observation.observation_id,
+        )
+        if new_image_id != self.config.notion.browser_image_block_id:
+            self.config.notion.browser_image_block_id = new_image_id
+            write_config(self.config, self.config_path)
+
+        cursor = "none"
+        if observation.cursor_x is not None and observation.cursor_y is not None:
+            cursor = f"{observation.cursor_x:g},{observation.cursor_y:g}"
+
+        self._set_browser_status(
+            "status: ready\n"
+            f"observation_id: {observation.observation_id}\n"
+            f"url: {observation.url}\n"
+            f"title: {observation.title}\n"
+            f"viewport: {observation.width}x{observation.height}\n"
+            f"scroll: {observation.scroll_x:g},{observation.scroll_y:g}\n"
+            f"cursor: {cursor}\n"
+            f"created_at: {observation.created_at}\n"
+        )
+
+    def _browser_idle_status(self) -> str:
+        return (
+            "status: idle\n"
+            "browser: not started\n"
+            f"viewport: {self.config.browser.width}x{self.config.browser.height}\n"
+            "hint: :b goto <url> or :b shot\n"
+        )
+
+    def _set_browser_status(self, text: str) -> None:
+        block_id = self.config.notion.browser_status_block_id
+        if not block_id:
+            self._ensure_browser_blocks()
+            block_id = self.config.notion.browser_status_block_id
+        try:
+            self.notion.update_code_block(block_id, text, language="plain text")
+        except NotionError as exc:
+            if exc.is_not_found:
+                self._ensure_browser_blocks()
+                self.notion.update_code_block(
+                    self.config.notion.browser_status_block_id,
+                    text,
+                    language="plain text",
+                )
+                return
+            raise
+
+    def _ensure_browser_blocks(self) -> None:
+        blocks = self.notion.ensure_browser_blocks(
+            page_id=self.config.notion.page_id,
+            status_block_id=self.config.notion.browser_status_block_id,
+            image_block_id=self.config.notion.browser_image_block_id,
+            status_text=self._browser_idle_status(),
+        )
+        if not blocks.recreated:
+            return
+
+        self.config.notion.browser_status_block_id = blocks.status_block_id
+        self.config.notion.browser_image_block_id = blocks.image_block_id
+        write_config(self.config, self.config_path)
+        print("[notion] browser status/screenshot surface created or repaired.")
 
     def _reset_input(self) -> None:
         self._set_input(self.input_prompt)
