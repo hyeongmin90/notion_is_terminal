@@ -5,15 +5,23 @@ import os
 import shutil
 from pathlib import Path
 
-from .config import AppConfig, BrowserSettings, DEFAULT_CONFIG_PATH, NotionSettings, TerminalSettings, write_config
+from .config import (
+    AppConfig,
+    BrowserSettings,
+    DEFAULT_CONFIG_PATH,
+    NotionSettings,
+    TerminalSettings,
+    load_config,
+    write_config,
+)
 from .notion import NotionClient, parse_page_id
 
 
 def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
     print("Terminal4GPTWeb setup")
     print(
-        "Creates one Notion page with a persistent terminal plus a Playwright "
-        "browser observation surface for GPT.\n"
+        "Creates a compact live control page, a separate Help page, and a "
+        "Playwright Vision payload page.\n"
     )
 
     token = getpass.getpass("Notion integration token: ").strip()
@@ -45,18 +53,59 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         show_cursor=True,
         source_bashrc=True,
     )
-
     browser = BrowserSettings()
 
-    print("\nChecking Notion access and creating page...")
+    config = _create_notion_surfaces(
+        token=token,
+        parent_page_id=parent_page_id,
+        title=title,
+        terminal=terminal,
+        browser=browser,
+    )
+    _print_init_result(config, config_path, reinitialized=False)
+    return config
+
+
+def run_reinit(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
+    print("Terminal4GPTWeb reinitialize")
+    print("Recreates deleted Notion pages while preserving local terminal/browser settings.\n")
+
+    current = load_config(config_path)
+    parent_page_id = current.notion.parent_page_id.strip()
+    if not parent_page_id:
+        parent_page_id = parse_page_id(
+            input("Parent Notion page URL or page ID: ").strip()
+        )
+
+    config = _create_notion_surfaces(
+        token=current.notion.token,
+        parent_page_id=parent_page_id,
+        title="Terminal4GPTWeb",
+        terminal=current.terminal,
+        browser=current.browser,
+    )
+    _print_init_result(config, config_path, reinitialized=True)
+    return config
+
+
+def _create_notion_surfaces(
+    *,
+    token: str,
+    parent_page_id: str,
+    title: str,
+    terminal: TerminalSettings,
+    browser: BrowserSettings,
+) -> AppConfig:
+    print("\nChecking Notion access and creating pages...")
     with NotionClient(token) as notion:
         notion.get_page(parent_page_id)
         created = notion.create_terminal_page(
             parent_page_id=parent_page_id,
             title=title,
-            terminal_text="Terminal4GPTWeb\n\nLocal PTY is not connected yet. Run: t4g run",
+            terminal_text="Terminal4GPTWeb\n\nLocal PTY is not connected yet. Run: t4g daemon start",
             input_text=terminal.input_prompt,
         )
+        help_page = notion.create_help_page(parent_page_id=created.page_id)
         vision_page = notion.ensure_browser_vision_page(
             parent_page_id=created.page_id,
             page_id="",
@@ -81,13 +130,16 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
             ),
         )
 
-    config = AppConfig(
+    return AppConfig(
         notion=NotionSettings(
             token=token,
             page_id=created.page_id,
             terminal_block_id=created.terminal_block_id,
             input_block_id=created.input_block_id,
             page_url=created.page_url,
+            parent_page_id=parent_page_id,
+            help_page_id=help_page.page_id,
+            help_page_url=help_page.page_url,
             browser_status_block_id=browser_blocks.status_block_id,
             browser_image_block_id=browser_blocks.image_block_id,
             browser_vision_page_id=vision_page.page_id,
@@ -97,21 +149,36 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         terminal=terminal,
         browser=browser,
     )
+
+
+def _print_init_result(
+    config: AppConfig,
+    config_path: Path | str,
+    *,
+    reinitialized: bool,
+) -> None:
     written = write_config(config, config_path)
 
     print("\n✓ Notion connection verified")
-    print("✓ Terminal page and built-in controls guide created")
-    print("✓ Terminal code block created")
-    print("✓ Input code block created with compact '> ' prompt")
+    print("✓ Compact Terminal / Input control page created")
+    print("✓ Terminal4GPTWeb Help child page created")
     print("✓ Browser Status / Browser Screenshot surface created")
     print("✓ Browser Vision Payload child page created")
-    print("✓ Runtime block self-healing enabled (10 second health check)")
+    print("✓ Runtime block self-healing enabled")
     print(f"✓ Config written: {written}")
-    if created.page_url:
-        print(f"\nPage: {created.page_url}")
-    print("\nStart in background with:\n  t4g daemon start\n\nOr run in foreground with:\n  t4g run")
-    print("\nThe generated Notion page contains the input/control reference.")
-    return config
+    if config.notion.page_url:
+        print(f"\nPage: {config.notion.page_url}")
+    if config.notion.help_page_url:
+        print(f"Help: {config.notion.help_page_url}")
+
+    if reinitialized:
+        print("\nNotion pages were recreated. Restart the daemon to load the new IDs:")
+        print("  t4g daemon restart")
+    else:
+        print("\nStart in background with:")
+        print("  t4g daemon start")
+        print("\nOr run in foreground with:")
+        print("  t4g run")
 
 
 def _prompt(label: str, default: str) -> str:
