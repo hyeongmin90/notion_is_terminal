@@ -4,7 +4,7 @@
 
 **Give GPT on the web a real terminal surface without exposing a shell server to the internet.**
 
-`notion_is_terminal` turns a Notion page into a bridge between a web-based GPT session and a persistent Linux PTY.
+`notion_is_terminal` turns Notion into a bridge between a web-based GPT session, a persistent Linux PTY, and a Playwright-controlled browser.
 
 When GPT can read and edit the generated Notion page through a Notion connector, it can:
 
@@ -13,11 +13,12 @@ When GPT can read and edit the generated Notion page through a Notion connector,
 - press terminal keys such as Enter, arrows, Backspace, Esc, and function keys;
 - send Ctrl combinations such as Ctrl-C, Ctrl-O, and Ctrl-X;
 - interact with TUI programs such as `nano`, `vim`, `less`, `top`, Codex, and other terminal applications;
-- keep shell state such as `cd`, environment variables, REPL sessions, and foreground programs alive between requests.
+- keep shell state such as `cd`, environment variables, REPL sessions, and foreground programs alive between requests;
+- open web pages with Playwright, inspect screenshots with GPT Vision, and control the browser with viewport-relative mouse coordinates.
 
 In short:
 
-> **GPT Web ↔ Notion ↔ local PTY ↔ WSL / Linux**
+> **GPT Web ↔ Notion ↔ PTY / Playwright ↔ WSL / Linux / Web**
 
 Notion is the shared control surface. The local daemon owns the real terminal.
 
@@ -93,6 +94,11 @@ That is why redraw-oriented applications can work at a text-UI level.
 - F1-F12
 - Raw byte / escape-sequence input
 - Runtime terminal resize
+- Persistent Playwright Chromium session
+- Browser screenshots published to Notion
+- Compact JPEG Vision payload on an isolated Notion child page
+- Observation-ID guarded mouse move/click/drag/scroll
+- Browser keyboard input and navigation
 - Detached background daemon
 - Single-instance locking
 - Runtime block self-healing
@@ -122,7 +128,10 @@ cd notion_is_terminal
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
+playwright install chromium
 ```
+
+The second command installs the Chromium binary used by the browser controller.
 
 This installs:
 
@@ -240,6 +249,62 @@ For example, text may appear inside Codex's input field without being submitted.
 ```
 
 The same control protocol can drive editors and other interactive applications.
+
+---
+
+## Browser + Vision
+
+The daemon can also keep a persistent Playwright Chromium session. Every browser action produces a new observation:
+
+```text
+Browser Status
+  observation_id
+  url / title
+  viewport / scroll
+  cursor
+  vision_page_url
+
+Browser Screenshot
+  latest full-resolution viewport image
+
+Browser Vision Payload
+  compressed JPEG payload on a separate child page
+```
+
+The child page keeps the machine-readable Vision payload out of the main terminal page. GPT can fetch it only when visual reasoning is required.
+
+Start a browser session:
+
+```text
+> :b goto https://example.com
+```
+
+Useful commands:
+
+| Action | Command |
+| --- | --- |
+| Navigate | `:b goto <url>` |
+| Capture a fresh observation | `:b shot` |
+| Move mouse | `:b move <observation_id> <x> <y>` |
+| Click | `:b click <observation_id> <x> <y>` |
+| Drag | `:b drag <observation_id> <x1> <y1> <x2> <y2>` |
+| Scroll | `:b scroll <dx> <dy>` |
+| Type text | `:b type <text>` |
+| Press key | `:b key <key>` |
+| Back | `:b back` |
+| Reload | `:b reload` |
+
+Mouse coordinates use **viewport-relative CSS pixels**. The default viewport is `1280x720`, and screenshots are captured in the same CSS-pixel coordinate system.
+
+Coordinate actions require the latest `observation_id`:
+
+```text
+> :b click obs_20261001T173408Z_0001 640 418
+```
+
+If GPT tries to click using an older screenshot, the daemon rejects it with `STALE_OBSERVATION` instead of applying stale coordinates to a changed page.
+
+After each successful action, the daemon automatically replaces the previous screenshot, updates the Vision payload, and issues a new observation ID.
 
 ---
 
@@ -375,6 +440,11 @@ page_id = "..."
 terminal_block_id = "..."
 input_block_id = "..."
 page_url = "https://..."
+browser_status_block_id = "..."
+browser_image_block_id = "..."
+browser_vision_page_id = "..."
+browser_vision_block_id = "..."
+browser_vision_page_url = "https://..."
 
 [terminal]
 shell = "/bin/bash"
@@ -389,6 +459,17 @@ refresh_interval = 1.5
 health_check_interval = 10.0
 show_cursor = true
 source_bashrc = true
+
+[browser]
+width = 1280
+height = 720
+headless = true
+timeout_ms = 15000
+settle_ms = 350
+show_cursor_overlay = true
+vision_enabled = true
+vision_quality = 35
+vision_max_base64_chars = 160000
 ```
 
 `NOTION_TOKEN` overrides the token stored in the config.
@@ -427,7 +508,7 @@ Notion is not a low-latency terminal transport. Terminal semantics are preserved
 
 Currently not supported as a native Notion terminal experience:
 
-- mouse reporting
+- terminal mouse reporting (Playwright browser mouse control is supported)
 - sixel / kitty graphics
 - pixel graphics
 - terminal color styling
