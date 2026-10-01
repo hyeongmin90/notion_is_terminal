@@ -457,11 +457,12 @@ The daemon treats the Notion page ID as the durable anchor and the two runtime b
 
 Every `health_check_interval` seconds it verifies both configured runtime blocks **and their position**. If either Terminal or Input was deleted, moved to trash, became invalid, or was recreated in the wrong place:
 
-1. the surviving old runtime block is archived when possible;
-2. the original Terminal/Input description blocks are used as stable anchors;
-3. fresh code blocks are inserted back at the original Terminal/Input positions;
-4. the current terminal screen and input prompt are restored;
-5. the new block IDs replace the old IDs in `config.toml`.
+1. the original Terminal/Input description blocks are used as stable anchors;
+2. each runtime block is validated independently;
+3. a healthy block is reused unchanged, including its existing Notion block ID;
+4. only the deleted, invalid, or misplaced block is recreated at its original position;
+5. the current terminal screen or input prompt is restored for the repaired side;
+6. only changed block IDs are replaced in `config.toml`.
 
 If those anchor sections were also deleted or substantially changed, recovery falls back to appending a fresh Terminal/Input section at the end of the page.
 
