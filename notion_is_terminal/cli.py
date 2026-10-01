@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from .background import daemon_status, restart_daemon, show_logs, start_daemon, stop_daemon
 from .config import DEFAULT_CONFIG_PATH, load_config
 from .daemon import TerminalDaemon
 from .notion import NotionClient, NotionError
@@ -29,6 +30,32 @@ def build_parser() -> argparse.ArgumentParser:
             default=DEFAULT_CONFIG_PATH,
             help=f"Config path (default: {DEFAULT_CONFIG_PATH})",
         )
+
+    daemon = sub.add_parser("daemon", help="Manage the detached background daemon.")
+    daemon.add_argument(
+        "action",
+        choices=("start", "stop", "restart", "status", "logs"),
+        help="Daemon lifecycle action.",
+    )
+    daemon.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help=f"Config path (default: {DEFAULT_CONFIG_PATH})",
+    )
+    daemon.add_argument(
+        "-n",
+        "--lines",
+        type=int,
+        default=100,
+        help="Number of lines for 'daemon logs' (default: 100).",
+    )
+    daemon.add_argument(
+        "-f",
+        "--follow",
+        action="store_true",
+        help="Follow daemon logs until Ctrl-C.",
+    )
     return parser
 
 
@@ -38,16 +65,30 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "init":
             run_init(args.config)
             return 0
+
         if args.command == "run":
             config = load_config(args.config)
             print(f"notion_is_terminal {__version__}")
             if config.notion.page_url:
                 print(f"Notion: {config.notion.page_url}")
-            print("Starting persistent PTY. Press Ctrl-C here to stop the local daemon.")
+            print("Starting persistent PTY in foreground. Press Ctrl-C here to stop.")
             TerminalDaemon(config, config_path=args.config).run()
             return 0
+
         if args.command == "doctor":
             return doctor(args.config)
+
+        if args.command == "daemon":
+            if args.action == "start":
+                return start_daemon(args.config)
+            if args.action == "stop":
+                return stop_daemon()
+            if args.action == "restart":
+                return restart_daemon(args.config)
+            if args.action == "status":
+                return daemon_status(args.config)
+            if args.action == "logs":
+                return show_logs(lines=args.lines, follow=args.follow)
     except KeyboardInterrupt:
         print("\nStopped.")
         return 130
