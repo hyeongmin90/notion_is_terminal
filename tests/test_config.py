@@ -12,6 +12,9 @@ def test_config_round_trip(tmp_path: Path):
             terminal_block_id="terminal",
             input_block_id="input",
             page_url="https://notion.so/test",
+            parent_page_id="parent",
+            help_page_id="help",
+            help_page_url="https://notion.so/help",
         ),
         terminal=TerminalSettings(
             shell="/bin/bash",
@@ -29,6 +32,9 @@ def test_config_round_trip(tmp_path: Path):
     write_config(config, path)
     loaded = load_config(path)
     assert loaded.notion.token == "secret_test"
+    assert loaded.notion.parent_page_id == "parent"
+    assert loaded.notion.help_page_id == "help"
+    assert loaded.notion.help_page_url == "https://notion.so/help"
     assert loaded.terminal.input_prompt == "> "
     assert loaded.terminal.columns == 100
     assert loaded.terminal.rows == 30
@@ -76,6 +82,9 @@ cwd = "/tmp"
     )
 
     loaded = load_config(path)
+    assert loaded.notion.parent_page_id == ""
+    assert loaded.notion.help_page_id == ""
+    assert loaded.notion.help_page_url == ""
     assert loaded.notion.browser_status_block_id == ""
     assert loaded.notion.browser_image_block_id == ""
     assert loaded.browser.width == 1280
