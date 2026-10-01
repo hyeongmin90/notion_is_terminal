@@ -162,6 +162,10 @@ class PTYSession:
             "DEL": "DELETE",
             "INS": "INSERT",
             "RETURN": "ENTER",
+            "RET": "ENTER",
+            "ENT": "ENTER",
+            "BS": "BACKSPACE",
+            "BKSP": "BACKSPACE",
         }
         normalized = aliases.get(normalized, normalized)
         data = KEYS.get(normalized)
