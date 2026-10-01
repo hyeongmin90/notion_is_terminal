@@ -21,10 +21,6 @@ In short:
 
 Notion is the shared control surface. The local daemon owns the real terminal.
 
-## Demo
-
-https://github.com/user-attachments/assets/a23b9865-3baf-4068-ab32-4756d1ac5a20
-
 > [!CAUTION]
 > This is **not a sandbox**. Anything written to the Input block is executed with the permissions of the Linux user running the daemon. Use a non-root account and do not send passwords, API keys, or other secrets through Notion.
 
