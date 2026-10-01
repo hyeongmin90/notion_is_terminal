@@ -1,0 +1,93 @@
+from __future__ import annotations
+
+import argparse
+import os
+import platform
+import sys
+from pathlib import Path
+
+from . import __version__
+from .config import DEFAULT_CONFIG_PATH, load_config
+from .daemon import TerminalDaemon
+from .notion import NotionClient, NotionError
+from .wizard import run_init
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="notion-terminal",
+        description="Use a Notion page as a remote PTY terminal UI.",
+    )
+    parser.add_argument("--version", action="version", version=__version__)
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    for name in ("init", "run", "doctor"):
+        command = sub.add_parser(name)
+        command.add_argument(
+            "--config",
+            type=Path,
+            default=DEFAULT_CONFIG_PATH,
+            help=f"Config path (default: {DEFAULT_CONFIG_PATH})",
+        )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        if args.command == "init":
+            run_init(args.config)
+            return 0
+        if args.command == "run":
+            config = load_config(args.config)
+            print(f"notion_is_terminal {__version__}")
+            if config.notion.page_url:
+                print(f"Notion: {config.notion.page_url}")
+            print("Starting persistent PTY. Press Ctrl-C here to stop the local daemon.")
+            TerminalDaemon(config).run()
+            return 0
+        if args.command == "doctor":
+            return doctor(args.config)
+    except KeyboardInterrupt:
+        print("\nStopped.")
+        return 130
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 2
+
+
+def doctor(config_path: Path) -> int:
+    checks: list[tuple[bool, str]] = []
+    try:
+        config = load_config(config_path)
+        checks.append((True, f"Config loaded: {config_path.expanduser()}"))
+    except Exception as exc:
+        print(f"✗ Config: {exc}")
+        return 1
+
+    checks.append((sys.platform.startswith("linux"), f"Linux/WSL platform: {platform.platform()}"))
+    checks.append((Path(config.terminal.shell).exists(), f"Shell exists: {config.terminal.shell}"))
+    checks.append((Path(config.terminal.cwd).expanduser().is_dir(), f"Working directory exists: {config.terminal.cwd}"))
+    checks.append((os.access(Path(config.terminal.cwd).expanduser(), os.R_OK | os.X_OK), "Working directory is accessible"))
+
+    try:
+        with NotionClient(config.notion.token, api_version=config.notion.api_version) as notion:
+            notion.get_page(config.notion.page_id)
+            terminal = notion.get_block(config.notion.terminal_block_id)
+            input_block = notion.get_block(config.notion.input_block_id)
+        checks.append((terminal.get("type") == "code", "Terminal block is a code block"))
+        checks.append((input_block.get("type") == "code", "Input block is a code block"))
+        checks.append((True, "Notion page is readable"))
+    except NotionError as exc:
+        checks.append((False, f"Notion access: {exc}"))
+
+    failed = False
+    for ok, message in checks:
+        print(("✓" if ok else "✗") + " " + message)
+        failed |= not ok
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
