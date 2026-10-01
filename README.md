@@ -21,6 +21,8 @@ Use a Notion page as a remote terminal UI for a local WSL/Ubuntu shell.
 - Runtime terminal resize.
 - Setup wizard that creates the correctly shaped Notion page, writes the controls guide, and saves block IDs.
 - Self-healing runtime blocks: deleted/trashed Terminal or Input blocks are recreated automatically and new IDs are persisted.
+- Built-in detached daemon lifecycle: `start`, `stop`, `restart`, `status`, `logs`.
+- Single-instance lock prevents foreground/background sessions from racing.
 - `doctor` diagnostics.
 - No DB, MQ, server, or sandbox in the MVP.
 
@@ -98,6 +100,62 @@ It creates a child page containing built-in usage/help blocks plus **exactly two
 The config is chmod `0600` on Unix when possible.
 
 ## Run
+
+### Background daemon
+
+Recommended for normal use:
+
+```bash
+notion-terminal daemon start
+```
+
+The process is detached from the current shell, so closing the WSL terminal window does not stop it.
+
+Check status:
+
+```bash
+notion-terminal daemon status
+```
+
+Restart after updating config or code:
+
+```bash
+notion-terminal daemon restart
+```
+
+Stop:
+
+```bash
+notion-terminal daemon stop
+```
+
+Read the last 100 log lines:
+
+```bash
+notion-terminal daemon logs
+```
+
+Follow logs:
+
+```bash
+notion-terminal daemon logs -f
+```
+
+Runtime files:
+
+```text
+~/.cache/notion_is_terminal/daemon.pid
+~/.cache/notion_is_terminal/daemon.log
+~/.cache/notion_is_terminal/instance.lock
+```
+
+Only one terminal session can run at a time. A foreground `run` and background daemon cannot both own the same local terminal session.
+
+The detached daemon survives closing the shell, but it does **not** automatically restart after WSL itself shuts down or Windows reboots. Use a systemd service later if boot-time auto-start is required.
+
+### Foreground mode
+
+Useful for debugging:
 
 ```bash
 notion-terminal run
@@ -368,7 +426,7 @@ Intentionally deferred:
 - multiple sessions
 - multi-user locking
 - webhook-based input
-- daemon persistence across host restart
+- automatic restart after WSL/Windows restart
 - service/systemd installer
 
 ## License
