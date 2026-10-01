@@ -22,6 +22,7 @@ def test_config_round_trip(tmp_path: Path):
             rows=30,
             poll_interval=1.0,
             refresh_interval=1.5,
+            health_check_interval=12.0,
         ),
     )
     write_config(config, path)
@@ -29,3 +30,4 @@ def test_config_round_trip(tmp_path: Path):
     assert loaded.notion.token == "secret_test"
     assert loaded.terminal.columns == 100
     assert loaded.terminal.rows == 30
+    assert loaded.terminal.health_check_interval == 12.0
