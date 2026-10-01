@@ -255,16 +255,36 @@ def terminal_page_children(terminal_text: str, input_text: str) -> list[dict[str
         paragraph_payload("Live PTY screen. Do not edit this block manually."),
         code_block_payload(terminal_text, language="plain text"),
         heading_payload("Input"),
-        paragraph_payload("Input uses a compact > prompt. Type after it and press Enter twice to submit normal input."),
+        paragraph_payload(
+            "Input uses a compact > prompt. Normal text is sent after Enter twice. "
+            "For TUI programs, use the key/control commands below when a real key press is required."
+        ),
         code_block_payload(input_text, language="bash"),
         divider_payload(),
         heading_payload("Controls"),
-        bulleted_payload("Interrupt immediately: ^C"),
-        bulleted_payload("EOF / suspend / clear / quit signal: ^D, ^Z, ^L, ^\\"),
-        bulleted_payload("Special key: :key UP, :key DOWN, :key LEFT, :key RIGHT, :key ESC, :key TAB, :key F1 ... F12"),
-        bulleted_payload(r"Raw keystrokes: :send \e:wq\r"),
-        bulleted_payload("Resize terminal: :resize 140x50"),
-        bulleted_payload("Normal prompts such as [Y/n] can be answered by typing y and pressing Enter twice."),
+        bulleted_payload("Normal input — type text after > and press Enter twice. Example: > pwd"),
+        bulleted_payload("Key press — :key NAME or short :k NAME. Example: :k ENTER"),
+        bulleted_payload("Ctrl key — :ctrl KEY or short :c KEY. Example: :c O for Ctrl-O"),
+        bulleted_payload(r"Raw bytes/text — :send TEXT or short :s TEXT. Escapes: \e, \x1b, \n, \r, \t, \\"),
+        bulleted_payload("Resize — :resize COLSxROWS or short :rs COLSxROWS. Example: :rs 140x50"),
+        heading_payload("Key names and aliases"),
+        bulleted_payload("ENTER aliases: ENTER, RETURN, RET, ENT"),
+        bulleted_payload("BACKSPACE aliases: BACKSPACE, BS, BKSP"),
+        bulleted_payload("ESC aliases: ESC, ESCAPE"),
+        bulleted_payload("DELETE / INSERT aliases: DELETE/DEL, INSERT/INS"),
+        bulleted_payload("PAGE keys: PAGEUP/PGUP, PAGEDOWN/PGDN"),
+        bulleted_payload("Navigation: UP, DOWN, LEFT, RIGHT, HOME, END, TAB, F1 ... F12"),
+        heading_payload("Immediate control tokens"),
+        paragraph_payload(
+            "^C, ^D, ^Z, ^L and ^\\ are recognized immediately without the extra blank-line submit. "
+            "Use ^C to interrupt a running process, ^D for EOF, ^Z to suspend, and ^L to clear/redraw."
+        ),
+        heading_payload("Common TUI recipes"),
+        bulleted_payload("Codex / Claude Code — type text normally; if it appears in the input box but does not submit, use :k ENTER separately."),
+        bulleted_payload("Codex / editors — delete one character with :k BS; move with :k LEFT / :k RIGHT."),
+        bulleted_payload("nano — save: :c O, confirm filename: :k ENTER, exit: :c X, search: :c W."),
+        bulleted_payload(r"vim — raw sequence example to save and quit: :s \e:wq\r"),
+        bulleted_payload("Prompts such as [Y/n] — type y, then Enter twice. If the program needs a literal key event, use :k ENTER."),
         callout_payload(
             "Do not enter sudo passwords, API keys, or other secrets in Notion. Use a local authentication step instead.",
             "🔐",
