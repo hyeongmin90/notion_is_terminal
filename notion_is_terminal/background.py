@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import fcntl
 import os
 import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import TextIO
 
 from .config import DEFAULT_CONFIG_PATH, load_config
 
@@ -13,6 +15,40 @@ from .config import DEFAULT_CONFIG_PATH, load_config
 CACHE_DIR = Path.home() / ".cache" / "notion_is_terminal"
 PID_FILE = CACHE_DIR / "daemon.pid"
 LOG_FILE = CACHE_DIR / "daemon.log"
+LOCK_FILE = CACHE_DIR / "instance.lock"
+
+
+class InstanceLock:
+    def __init__(self) -> None:
+        self._stream: TextIO | None = None
+
+    def __enter__(self) -> "InstanceLock":
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        stream = LOCK_FILE.open("a+", encoding="utf-8")
+        try:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            stream.close()
+            raise RuntimeError(
+                "another notion_is_terminal session is already running "
+                "(foreground or daemon)"
+            )
+
+        stream.seek(0)
+        stream.truncate()
+        stream.write(str(os.getpid()))
+        stream.flush()
+        self._stream = stream
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        if self._stream is None:
+            return
+        try:
+            fcntl.flock(self._stream.fileno(), fcntl.LOCK_UN)
+        finally:
+            self._stream.close()
+            self._stream = None
 
 
 def start_daemon(config_path: Path | str = DEFAULT_CONFIG_PATH) -> int:
