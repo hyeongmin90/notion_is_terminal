@@ -46,6 +46,7 @@ class TerminalDaemon:
 
             self._health_check()
             self._ensure_browser_blocks()
+            self._ensure_browser_vision_page()
             self._reset_browser_surface()
             self._reset_input()
             self._write_terminal(force=True)
@@ -197,6 +198,14 @@ class TerminalDaemon:
         if observation.cursor_x is not None and observation.cursor_y is not None:
             cursor = f"{observation.cursor_x:g},{observation.cursor_y:g}"
 
+        self._publish_browser_vision(observation)
+
+        vision_status = "disabled"
+        vision_page = ""
+        if self.config.browser.vision_enabled:
+            vision_status = f"ready (jpeg quality {observation.vision_quality})"
+            vision_page = self.config.notion.browser_vision_page_url
+
         self._set_browser_status(
             "status: ready\n"
             f"observation_id: {observation.observation_id}\n"
@@ -205,8 +214,62 @@ class TerminalDaemon:
             f"viewport: {observation.width}x{observation.height}\n"
             f"scroll: {observation.scroll_x:g},{observation.scroll_y:g}\n"
             f"cursor: {cursor}\n"
+            f"vision: {vision_status}\n"
+            f"vision_page_url: {vision_page}\n"
             f"created_at: {observation.created_at}\n"
         )
+
+    def _publish_browser_vision(self, observation: BrowserObservation) -> None:
+        if not self.config.browser.vision_enabled:
+            return
+        if not observation.vision_base64:
+            raise BrowserError("Vision payload is enabled but the observation has no JPEG payload.")
+
+        self._ensure_browser_vision_page()
+        payload = (
+            f"observation_id: {observation.observation_id}\n"
+            "mime: image/jpeg\n"
+            "encoding: base64\n"
+            f"viewport: {observation.width}x{observation.height}\n"
+            f"quality: {observation.vision_quality}\n"
+            "data_base64:\n"
+            f"{observation.vision_base64}\n"
+        )
+        self.notion.update_code_block(
+            self.config.notion.browser_vision_block_id,
+            payload,
+            language="plain text",
+        )
+
+    def _vision_idle_status(self) -> str:
+        return (
+            "status: idle\n"
+            "mime: image/jpeg\n"
+            "encoding: base64\n"
+            "data_base64:\n"
+        )
+
+    def _ensure_browser_vision_page(self) -> None:
+        if not self.config.browser.vision_enabled:
+            return
+        vision = self.notion.ensure_browser_vision_page(
+            parent_page_id=self.config.notion.page_id,
+            page_id=self.config.notion.browser_vision_page_id,
+            block_id=self.config.notion.browser_vision_block_id,
+            idle_text=self._vision_idle_status(),
+        )
+        changed = (
+            vision.recreated
+            or vision.page_id != self.config.notion.browser_vision_page_id
+            or vision.block_id != self.config.notion.browser_vision_block_id
+            or vision.page_url != self.config.notion.browser_vision_page_url
+        )
+        self.config.notion.browser_vision_page_id = vision.page_id
+        self.config.notion.browser_vision_block_id = vision.block_id
+        self.config.notion.browser_vision_page_url = vision.page_url
+        if changed:
+            write_config(self.config, self.config_path)
+            print("[notion] browser vision payload page created or repaired.")
 
     def _reset_browser_surface(self) -> None:
         try:
@@ -214,15 +277,28 @@ class TerminalDaemon:
             if removed or self.config.notion.browser_image_block_id:
                 self.config.notion.browser_image_block_id = ""
                 write_config(self.config, self.config_path)
+            if self.config.browser.vision_enabled:
+                self._ensure_browser_vision_page()
+                self.notion.update_code_block(
+                    self.config.notion.browser_vision_block_id,
+                    self._vision_idle_status(),
+                    language="plain text",
+                )
             self._set_browser_status(self._browser_idle_status())
         except NotionError as exc:
             print(f"[notion] browser surface reset failed: {exc}")
 
     def _browser_idle_status(self) -> str:
+        vision_page = (
+            self.config.notion.browser_vision_page_url
+            if self.config.browser.vision_enabled
+            else ""
+        )
         return (
             "status: idle\n"
             "browser: not started\n"
             f"viewport: {self.config.browser.width}x{self.config.browser.height}\n"
+            f"vision_page_url: {vision_page}\n"
             "hint: :b goto <url> or :b shot\n"
         )
 
@@ -307,6 +383,12 @@ class TerminalDaemon:
                     "Run `notion-terminal init` again if the page was deleted."
                 ) from exc
             print(f"[notion] runtime block health check failed: {exc}")
+
+        try:
+            self._ensure_browser_blocks()
+            self._ensure_browser_vision_page()
+        except NotionError as exc:
+            print(f"[notion] browser surface health check failed: {exc}")
 
     def _recover_runtime_blocks(self) -> None:
         try:
