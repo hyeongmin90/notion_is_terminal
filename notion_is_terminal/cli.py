@@ -119,14 +119,28 @@ def doctor(config_path: Path) -> int:
     checks.append((Path(config.terminal.shell).exists(), f"Shell exists: {config.terminal.shell}"))
     checks.append((Path(config.terminal.cwd).expanduser().is_dir(), f"Working directory exists: {config.terminal.cwd}"))
     checks.append((os.access(Path(config.terminal.cwd).expanduser(), os.R_OK | os.X_OK), "Working directory is accessible"))
+    try:
+        import playwright  # noqa: F401
+        checks.append((True, "Playwright Python package is installed"))
+    except ImportError:
+        checks.append((False, "Playwright package missing: pip install -e ."))
 
     try:
         with NotionClient(config.notion.token, api_version=config.notion.api_version) as notion:
             notion.get_page(config.notion.page_id)
             terminal = notion.get_block(config.notion.terminal_block_id)
             input_block = notion.get_block(config.notion.input_block_id)
+            browser_status = (
+                notion.get_block(config.notion.browser_status_block_id)
+                if config.notion.browser_status_block_id
+                else None
+            )
         checks.append((terminal.get("type") == "code" and not terminal.get("archived", False), "Terminal block is active"))
         checks.append((input_block.get("type") == "code" and not input_block.get("archived", False), "Input block is active"))
+        if browser_status is not None:
+            checks.append((browser_status.get("type") == "code" and not browser_status.get("archived", False), "Browser Status block is active"))
+        else:
+            checks.append((True, "Browser Status will be created on next daemon start"))
         checks.append((True, "Notion page is readable"))
     except NotionError as exc:
         checks.append((False, f"Notion access: {exc}"))
