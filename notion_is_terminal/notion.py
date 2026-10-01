@@ -383,6 +383,8 @@ class NotionClient:
                 "children": [
                     callout_payload(
                         "Machine-readable compressed browser screenshot for GPT Vision. "
+                        "Fetch this page, decode data_base64 as image/jpeg, and only act when "
+                        "its observation_id matches the current Browser Status observation_id. "
                         "Do not edit this page manually.",
                         "👁️",
                     ),
@@ -471,7 +473,10 @@ class NotionClient:
                 divider_payload(),
                 heading_payload("Browser"),
                 paragraph_payload(
-                    "Playwright browser status. Coordinates use viewport-relative CSS pixels."
+                    "Playwright browser status. Coordinates use viewport-relative CSS pixels. "
+                    "Use :b goto <url> or :b shot to observe. Mouse actions must use the latest "
+                    "observation_id. For GPT Vision, fetch vision_page_url from Browser Status, "
+                    "decode data_base64 as image/jpeg, and verify the payload observation_id matches."
                 ),
                 code_block_payload(status_text, language="plain text"),
                 heading_payload("Browser Screenshot"),
