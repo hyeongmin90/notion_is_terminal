@@ -157,26 +157,68 @@ class NotionClient:
         children = self.get_block_children(page_id)
         anchors = find_runtime_anchors(children)
 
-        both_usable = block_is_usable_code(terminal) and block_is_usable_code(input_block)
-        in_place = bool(
-            anchors
-            and runtime_blocks_are_in_place(
+        if anchors:
+            terminal_ok = block_is_usable_code(terminal) and runtime_block_is_in_place(
                 children,
-                terminal_anchor_id=anchors.terminal_anchor_id,
-                input_anchor_id=anchors.input_anchor_id,
-                terminal_block_id=terminal_block_id,
-                input_block_id=input_block_id,
+                anchor_id=anchors.terminal_anchor_id,
+                block_id=terminal_block_id,
             )
-        )
-        if both_usable and in_place:
-            return RuntimeBlocks(
-                terminal_block_id=terminal_block_id,
-                input_block_id=input_block_id,
-                recreated=False,
+            input_ok = block_is_usable_code(input_block) and runtime_block_is_in_place(
+                children,
+                anchor_id=anchors.input_anchor_id,
+                block_id=input_block_id,
             )
 
-        # Retire any surviving runtime blocks before recreating them. This also
-        # migrates older self-healed pairs that were appended at the page end.
+            if terminal_ok and input_ok:
+                return RuntimeBlocks(
+                    terminal_block_id=terminal_block_id,
+                    input_block_id=input_block_id,
+                    recreated=False,
+                )
+
+            repaired = False
+            new_terminal_id = terminal_block_id
+            new_input_id = input_block_id
+
+            # Repair only the broken side. A healthy runtime block keeps its
+            # original Notion block ID and remains untouched.
+            if not terminal_ok:
+                if terminal is not None and not terminal.get("archived") and not terminal.get("in_trash"):
+                    try:
+                        self.archive_block(terminal_block_id)
+                    except NotionError:
+                        pass
+                new_terminal_id = self.restore_runtime_block_at_anchor(
+                    page_id=page_id,
+                    anchor_id=anchors.terminal_anchor_id,
+                    text=terminal_text,
+                    language="plain text",
+                )
+                repaired = True
+
+            if not input_ok:
+                if input_block is not None and not input_block.get("archived") and not input_block.get("in_trash"):
+                    try:
+                        self.archive_block(input_block_id)
+                    except NotionError:
+                        pass
+                new_input_id = self.restore_runtime_block_at_anchor(
+                    page_id=page_id,
+                    anchor_id=anchors.input_anchor_id,
+                    text=input_text,
+                    language="bash",
+                )
+                repaired = True
+
+            return RuntimeBlocks(
+                terminal_block_id=new_terminal_id,
+                input_block_id=new_input_id,
+                recreated=repaired,
+            )
+
+        # Legacy/fallback path if a user also deleted or substantially changed
+        # the stable headings/description blocks. With no anchors, we cannot
+        # reliably restore only one side to its original position.
         for block_id, block in (
             (terminal_block_id, terminal),
             (input_block_id, input_block),
@@ -187,64 +229,36 @@ class NotionClient:
                 except NotionError:
                     pass
 
-        if anchors:
-            return self.restore_runtime_blocks_at_anchors(
-                page_id=page_id,
-                anchors=anchors,
-                terminal_text=terminal_text,
-                input_text=input_text,
-            )
-
-        # Legacy/fallback path if a user also deleted or substantially changed
-        # the stable headings/description blocks.
         return self.append_runtime_blocks(
             page_id=page_id,
             terminal_text=terminal_text,
             input_text=input_text,
         )
 
-    def restore_runtime_blocks_at_anchors(
+    def restore_runtime_block_at_anchor(
         self,
         *,
         page_id: str,
-        anchors: RuntimeAnchors,
-        terminal_text: str,
-        input_text: str,
-    ) -> RuntimeBlocks:
-        terminal_response = self._request(
+        anchor_id: str,
+        text: str,
+        language: str,
+    ) -> str:
+        response = self._request(
             "PATCH",
             f"/blocks/{page_id}/children",
             json={
-                "children": [code_block_payload(terminal_text, language="plain text")],
+                "children": [code_block_payload(text, language=language)],
                 "position": {
                     "type": "after_block",
-                    "after_block": {"id": anchors.terminal_anchor_id},
-                },
-            },
-        )
-        input_response = self._request(
-            "PATCH",
-            f"/blocks/{page_id}/children",
-            json={
-                "children": [code_block_payload(input_text, language="bash")],
-                "position": {
-                    "type": "after_block",
-                    "after_block": {"id": anchors.input_anchor_id},
+                    "after_block": {"id": anchor_id},
                 },
             },
         )
 
         try:
-            terminal_id = terminal_response["results"][0]["id"]
-            input_id = input_response["results"][0]["id"]
+            return response["results"][0]["id"]
         except (KeyError, IndexError) as exc:
-            raise NotionError("Notion did not return recreated runtime block IDs.") from exc
-
-        return RuntimeBlocks(
-            terminal_block_id=terminal_id,
-            input_block_id=input_id,
-            recreated=True,
-        )
+            raise NotionError("Notion did not return the recreated runtime block ID.") from exc
 
     def append_runtime_blocks(
         self,
@@ -375,13 +389,11 @@ def find_runtime_anchors(children: list[dict[str, Any]]) -> RuntimeAnchors | Non
     return None
 
 
-def runtime_blocks_are_in_place(
+def runtime_block_is_in_place(
     children: list[dict[str, Any]],
     *,
-    terminal_anchor_id: str,
-    input_anchor_id: str,
-    terminal_block_id: str,
-    input_block_id: str,
+    anchor_id: str,
+    block_id: str,
 ) -> bool:
     active = [
         block for block in children
@@ -390,21 +402,33 @@ def runtime_blocks_are_in_place(
     ids = [block.get("id") for block in active]
 
     try:
-        terminal_anchor_index = ids.index(terminal_anchor_id)
-        input_anchor_index = ids.index(input_anchor_id)
+        anchor_index = ids.index(anchor_id)
     except ValueError:
         return False
 
-    terminal_ok = (
-        terminal_anchor_index + 1 < len(ids)
-        and ids[terminal_anchor_index + 1] == terminal_block_id
-    )
-    input_ok = (
-        input_anchor_index + 1 < len(ids)
-        and ids[input_anchor_index + 1] == input_block_id
-    )
-    return terminal_ok and input_ok
+    return anchor_index + 1 < len(ids) and ids[anchor_index + 1] == block_id
 
+
+def runtime_blocks_are_in_place(
+    children: list[dict[str, Any]],
+    *,
+    terminal_anchor_id: str,
+    input_anchor_id: str,
+    terminal_block_id: str,
+    input_block_id: str,
+) -> bool:
+    return (
+        runtime_block_is_in_place(
+            children,
+            anchor_id=terminal_anchor_id,
+            block_id=terminal_block_id,
+        )
+        and runtime_block_is_in_place(
+            children,
+            anchor_id=input_anchor_id,
+            block_id=input_block_id,
+        )
+    )
 
 def terminal_page_children(terminal_text: str, input_text: str) -> list[dict[str, Any]]:
     return [
