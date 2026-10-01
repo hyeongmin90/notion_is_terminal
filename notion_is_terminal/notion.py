@@ -255,7 +255,7 @@ def terminal_page_children(terminal_text: str, input_text: str) -> list[dict[str
         paragraph_payload("Live PTY screen. Do not edit this block manually."),
         code_block_payload(terminal_text, language="plain text"),
         heading_payload("Input"),
-        paragraph_payload("Type after the prompt. Press Enter twice to submit normal input."),
+        paragraph_payload("Input uses a compact > prompt. Type after it and press Enter twice to submit normal input."),
         code_block_payload(input_text, language="bash"),
         divider_payload(),
         heading_payload("Controls"),
