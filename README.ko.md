@@ -117,7 +117,12 @@ ANSI cursor 이동, 화면 지우기, scrolling, redraw sequence를 로컬에서
 - Bash
 - Notion internal integration
 - integration에 공유된 Notion parent page
-- 선택사항: 동일 Notion workspace에 접근할 수 있는 GPT / ChatGPT 웹 세션
+- GPT 웹에서 원격 제어하려면 **ChatGPT의 Notion 연결이 필수**
+- 개발 워크플로에는 **GitHub 연결 권장**
+- 반복 운영 점검에는 지원되는 경우 ChatGPT 일정/자동화 기능 사용 가능
+
+> [!IMPORTANT]
+> Terminal4GPTWeb 자체가 별도의 GPT API를 제공하는 구조는 아닙니다. GPT 웹은 생성된 Notion 페이지를 읽고 수정하는 방식으로 로컬 runtime에 접근하므로 GPT 웹에서 사용할 때는 Notion 연결이 필요합니다.
 
 ---
 
@@ -173,6 +178,170 @@ Input
 ```
 
 가능한 환경에서는 권한을 `0600`으로 설정합니다.
+
+초기화하면 다음 3개의 Notion surface가 생성됩니다.
+
+```text
+Terminal4GPTWeb
+├─ Terminal / Input / Browser      # 실제 제어 페이지
+├─ Terminal4GPTWeb Help            # 사람 + 에이전트 사용법
+└─ Browser Vision Payload          # Vision용 JPEG payload
+```
+
+나중에 메인 Notion 페이지 자체를 삭제했다면 다음 명령으로 전체 페이지와 runtime ID를 다시 만들 수 있습니다.
+
+```bash
+t4g reinit
+t4g daemon restart
+```
+
+최초 초기화 이후에는 parent Notion page ID를 로컬 config에 저장합니다. 기존 버전 config라면 `reinit` 시 parent page를 한 번 다시 물을 수 있습니다.
+
+---
+
+## GPT 웹 연결 구성
+
+Terminal4GPTWeb은 ChatGPT 웹에서 다음 연결을 함께 사용할 때 활용 범위가 가장 넓습니다.
+
+### 1. Notion — 필수
+
+ChatGPT에 Notion을 연결하고 생성된 Terminal4GPTWeb 페이지를 ChatGPT가 읽고 수정할 수 있게 해야 합니다.
+
+GPT 웹이 로컬 runtime에 접근하는 경로는 다음과 같습니다.
+
+```text
+GPT Web
+  ↓ Notion 읽기/수정
+Terminal4GPTWeb 제어 페이지
+  ↓ local daemon polling
+PTY / Playwright
+```
+
+Notion 연결이 없더라도 로컬 daemon 자체는 실행할 수 있지만, GPT 웹에서 이 페이지를 터미널/브라우저 도구처럼 사용할 수는 없습니다.
+
+### 2. GitHub — 개발 작업에 권장
+
+ChatGPT에 GitHub도 연결하면 repository context와 로컬 실행 환경을 함께 사용할 수 있습니다.
+
+권장 개발 흐름:
+
+```text
+GitHub
+  ↓ issue / PR / commit history / code context
+GPT Web
+  ↓
+Notion → Terminal4GPTWeb
+  ↓
+로컬 수정 / build / unit test / integration test
+  ↓
+Playwright + Vision
+  ↓
+브라우저 E2E 검증
+```
+
+GitHub에서는 코드, 이슈, PR, 변경 이력을 확인하고, 실제 머신에서 실행해야 하는 build/test 명령은 Terminal4GPTWeb을 통해 수행하는 식입니다.
+
+예:
+
+```text
+이 저장소 최신 변경사항을 리뷰하고 관련 테스트를 로컬에서 실행한 뒤
+Playwright로 실제 웹 화면까지 검증해줘.
+
+연결된 이슈를 확인하고 로컬에서 재현한 뒤 수정하고,
+테스트를 통과시키고 Browser Vision으로 영향받은 화면까지 확인해줘.
+```
+
+### 3. 일정 / 자동화 — OPS에 선택적으로 활용
+
+사용 중인 ChatGPT 환경에서 일정/자동화 기능을 지원한다면 Terminal4GPTWeb을 반복 운영 점검 surface로 사용할 수도 있습니다.
+
+예를 들어 주기적으로 다음을 확인하게 할 수 있습니다.
+
+- `docker ps`, process/service 상태
+- 로컬 health endpoint
+- 최근 ERROR 로그
+- disk / memory 상태
+- Playwright 기반 간단한 브라우저 smoke test
+- 이상이 있을 때만 알림
+
+예시:
+
+```text
+매일 아침 Terminal4GPTWeb 페이지를 확인해.
+서비스 health checklist와 최근 오류 로그를 확인하고,
+Playwright로 메인 화면 smoke test까지 실행해.
+문제가 있을 때만 알려줘.
+```
+
+반복 점검은 가능한 한 read-only 명령 위주로 구성하는 것을 권장합니다. 비밀번호, API Key, private key 같은 비밀정보를 Notion Input에 넣으면 안 됩니다.
+
+---
+
+## GPT / 에이전트 동작 규칙
+
+안정적으로 사용하려면 에이전트가 다음 `observe → act → observe` 규칙을 따르는 것이 좋습니다.
+
+1. 먼저 **Terminal** 또는 **Browser Status**를 읽습니다.
+2. **Input**에는 한 번에 하나의 명령/action만 작성합니다.
+3. Input이 다시 `>`로 초기화될 때까지 기다립니다.
+4. 다음 action 전에 갱신된 Terminal/Browser Status를 다시 읽습니다.
+5. 브라우저 좌표 action은 반드시 최신 `observation_id`를 사용합니다.
+6. Vision이 필요하면 `vision_page_url`을 읽고 `data_base64`를 JPEG로 해석한 뒤 observation ID가 일치하는지 확인합니다.
+7. Browser Status가 `failed`라면 이전 좌표를 계속 쓰지 말고 오류를 먼저 처리합니다.
+
+이 규칙은 생성되는 **Terminal4GPTWeb Help** Notion child page에도 같이 기록됩니다.
+
+---
+
+## 활용 예시
+
+### 개발 + 테스트
+
+```text
+GitHub context 확인
+→ 코드 / 이슈 / PR 분석
+→ Terminal에서 로컬 build/test
+→ 애플리케이션 실행
+→ Playwright로 접속
+→ Vision으로 화면 확인
+→ 실제 상호작용 후 결과 검증
+```
+
+### 로컬 장애 대응
+
+```text
+Terminal 확인
+→ process/container 상태 확인
+→ 로그 확인
+→ health request
+→ 수정/재시작
+→ 다시 검증
+```
+
+### Browser E2E
+
+```text
+:b goto <url>
+→ 최신 Vision payload 확인
+→ 좌표 판단
+→ :b click <obs_id> <x> <y>
+→ 새 observation 대기
+→ 변경된 화면 확인
+```
+
+### OPS / 정기 점검
+
+고정 checklist를 짧게 두는 방식이 좋습니다.
+
+```text
+1. process/container 상태
+2. health endpoint
+3. 최근 ERROR 로그
+4. disk + memory
+5. browser smoke test
+```
+
+자동화한다면 매번 정상 보고를 보내기보다는 실제 조치가 필요한 실패가 있을 때만 알리도록 구성하는 편이 좋습니다.
 
 ---
 
@@ -430,6 +599,15 @@ Terminal/Input section 자체까지 삭제된 경우에는 원래 위치를 알 
 
 페이지 자체가 삭제되거나 접근 불가능한 경우에는 새 페이지를 임의 생성하지 않고 daemon을 중단합니다.
 
+메인 제어 페이지 자체를 의도적으로 다시 만들려면:
+
+```bash
+t4g reinit
+t4g daemon restart
+```
+
+`reinit`은 기존 로컬 terminal/browser 설정은 유지하고 Notion page와 runtime block ID만 새 값으로 교체합니다.
+
 ---
 
 ## 설정
@@ -450,6 +628,9 @@ page_id = "..."
 terminal_block_id = "..."
 input_block_id = "..."
 page_url = "https://..."
+parent_page_id = "..."
+help_page_id = "..."
+help_page_url = "https://..."
 browser_status_block_id = "..."
 browser_image_block_id = "..."
 browser_vision_page_id = "..."
