@@ -1,7 +1,7 @@
 from notion_is_terminal.protocol import InputKind, decode_escapes, extract_submission
 
 
-PROMPT = "user@ubuntu:/home$ "
+PROMPT = "> "
 
 
 def test_partial_text_is_not_submitted():
