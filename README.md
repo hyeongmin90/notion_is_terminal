@@ -115,7 +115,12 @@ Tested interaction patterns include Bash, Python REPL, nano, vim-style key seque
 - Bash
 - A Notion internal integration
 - A Notion page shared with that integration
-- Optional: a GPT / ChatGPT web session with access to the same Notion workspace
+- **GPT / ChatGPT Web with the Notion connection enabled** for remote GPT control
+- Optional but recommended for development: **GitHub connection** in ChatGPT
+- Optional for recurring operations: ChatGPT scheduled tasks / automations, where available
+
+> [!IMPORTANT]
+> Terminal4GPTWeb does not expose a standalone GPT API. GPT Web reaches the local runtime by reading and editing the generated Notion pages, so the Notion connection is required for the GPT-Web workflow.
 
 ---
 
@@ -171,6 +176,170 @@ Configuration is stored at:
 ```
 
 The config is chmod `0600` where supported.
+
+The initializer creates three Notion surfaces:
+
+```text
+Terminal4GPTWeb
+├─ Terminal / Input / Browser      # live control surface
+├─ Terminal4GPTWeb Help            # human + agent usage guide
+└─ Browser Vision Payload          # machine-readable JPEG payload
+```
+
+If the whole Notion control page is deleted later, recreate all generated pages and runtime block IDs with:
+
+```bash
+t4g reinit
+t4g daemon restart
+```
+
+The first run stores the parent Notion page ID locally. Older configs may ask for the parent page once during `reinit`.
+
+---
+
+## Recommended ChatGPT Web setup
+
+Terminal4GPTWeb is most useful when ChatGPT Web has the following connections.
+
+### 1. Notion — required
+
+Connect Notion to ChatGPT and make the generated Terminal4GPTWeb page accessible to that connection.
+
+The Notion connection is the transport used by GPT Web:
+
+```text
+GPT Web
+  ↓ read/write through Notion
+Terminal4GPTWeb control page
+  ↓ polled by local daemon
+PTY / Playwright
+```
+
+Without the Notion connection, the local daemon still works, but GPT Web cannot use the generated page as its terminal/browser tool surface.
+
+### 2. GitHub — recommended for development
+
+Connect GitHub when you want GPT to work with repository context in addition to the local runtime.
+
+A useful development loop is:
+
+```text
+GitHub
+  ↓ issue / PR / history / code context
+GPT Web
+  ↓
+Notion → Terminal4GPTWeb
+  ↓
+edit / build / unit test / integration test
+  ↓
+Playwright + Vision
+  ↓
+browser E2E verification
+```
+
+This lets GPT use GitHub for repository-level context while using the local terminal for commands that must run on your machine.
+
+Example requests:
+
+```text
+Review the latest changes in this repository, run the relevant tests locally,
+and verify the web UI with Playwright.
+
+Check the linked issue, reproduce it locally, fix it, run the test suite,
+then verify the affected screen through Browser Vision.
+```
+
+### 3. Scheduled tasks / automations — optional for OPS
+
+If your ChatGPT client supports scheduled tasks or automations, Terminal4GPTWeb can also act as an operations surface.
+
+A scheduled task can periodically ask GPT to:
+
+- inspect `docker ps`, service/process state, disk and memory usage;
+- call local health endpoints;
+- inspect recent logs for errors;
+- run a lightweight browser smoke test;
+- report only when a check fails or needs attention.
+
+Example OPS instruction:
+
+```text
+Every morning, inspect my Terminal4GPTWeb page.
+Run the service health checklist, check recent error logs,
+and verify the main web page with Playwright.
+Notify me only if something needs attention.
+```
+
+Keep recurring checks read-only where possible. Do not put credentials, sudo passwords, private keys, or other secrets into the Notion Input block.
+
+---
+
+## How GPT / agents should operate
+
+For reliable agent behavior, use a strict observe → act → observe loop:
+
+1. Read **Terminal** or **Browser Status**.
+2. Write exactly one command/action to **Input**.
+3. Wait until Input resets to `>`.
+4. Read the refreshed output before issuing the next action.
+5. For browser coordinate actions, use only the latest `observation_id`.
+6. When Vision is needed, fetch `vision_page_url`, decode `data_base64` as JPEG, and verify that its observation ID matches Browser Status.
+7. Stop and surface the error when Browser Status is `failed`; do not continue with stale coordinates.
+
+This protocol is also documented in the generated **Terminal4GPTWeb Help** Notion child page.
+
+---
+
+## Example workflows
+
+### Development + test
+
+```text
+GitHub context
+→ inspect code / issue / PR
+→ run local build and tests through Terminal
+→ start the application
+→ open it with Playwright
+→ inspect with Vision
+→ interact and verify the result
+```
+
+### Local troubleshooting
+
+```text
+read Terminal
+→ inspect process/container state
+→ inspect logs
+→ run health request
+→ apply a fix
+→ restart service
+→ verify again
+```
+
+### Browser E2E
+
+```text
+:b goto <url>
+→ read latest Vision payload
+→ choose coordinates
+→ :b click <obs_id> <x> <y>
+→ wait for new observation
+→ verify the changed screen
+```
+
+### OPS / recurring checks
+
+Use a fixed, minimal checklist such as:
+
+```text
+1. process/container status
+2. health endpoint
+3. recent ERROR logs
+4. disk + memory
+5. browser smoke test
+```
+
+For automated runs, prefer notifications only on actionable failures rather than sending a success message every time.
 
 ---
 
@@ -422,6 +591,15 @@ If the stable Terminal/Input anchor sections are also removed, recovery falls ba
 
 If the page itself is deleted or inaccessible, the daemon stops instead of silently creating another page.
 
+To intentionally recreate a deleted full control page, run:
+
+```bash
+t4g reinit
+t4g daemon restart
+```
+
+`reinit` preserves the existing local terminal/browser settings and replaces the Notion page and runtime block IDs in the config.
+
 ---
 
 ## Configuration
@@ -442,6 +620,9 @@ page_id = "..."
 terminal_block_id = "..."
 input_block_id = "..."
 page_url = "https://..."
+parent_page_id = "..."
+help_page_id = "..."
+help_page_url = "https://..."
 browser_status_block_id = "..."
 browser_image_block_id = "..."
 browser_vision_page_id = "..."
