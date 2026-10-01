@@ -404,6 +404,25 @@ class NotionClient:
             data=image_bytes,
             content_type="image/png",
         )
+
+        # Keep the screenshot section single-image. Archive the previous block
+        # before inserting the replacement so a failed archive cannot silently
+        # leave an ever-growing image history behind.
+        if old_image_block_id:
+            old = self._try_get_block(old_image_block_id)
+            if old is not None and not old.get("archived") and not old.get("in_trash"):
+                self.archive_block(old_image_block_id)
+
+        # Also clean up stale image blocks left by an interrupted/older daemon.
+        for stale_id in browser_screenshot_image_ids(
+            children,
+            anchor_id=anchors.screenshot_anchor_id,
+        ):
+            if stale_id != old_image_block_id:
+                stale = self._try_get_block(stale_id)
+                if stale is not None and not stale.get("archived") and not stale.get("in_trash"):
+                    self.archive_block(stale_id)
+
         response = self._request(
             "PATCH",
             f"/blocks/{page_id}/children",
@@ -420,13 +439,6 @@ class NotionClient:
         except (KeyError, IndexError) as exc:
             raise NotionError("Notion did not return the Browser Screenshot image block.") from exc
 
-        if old_image_block_id and old_image_block_id != new_image_id:
-            old = self._try_get_block(old_image_block_id)
-            if old is not None and not old.get("archived") and not old.get("in_trash"):
-                try:
-                    self.archive_block(old_image_block_id)
-                except NotionError:
-                    pass
         return new_image_id
 
     def upload_file(self, *, filename: str, data: bytes, content_type: str) -> str:
@@ -614,6 +626,29 @@ def find_browser_anchors(children: list[dict[str, Any]]) -> BrowserAnchors | Non
             return BrowserAnchors(status_anchor, screenshot_anchor)
 
     return None
+
+
+def browser_screenshot_image_ids(
+    children: list[dict[str, Any]],
+    *,
+    anchor_id: str,
+) -> list[str]:
+    active = [
+        block for block in children
+        if not block.get("archived") and not block.get("in_trash")
+    ]
+    try:
+        index = next(i for i, block in enumerate(active) if block.get("id") == anchor_id)
+    except StopIteration:
+        return []
+
+    image_ids: list[str] = []
+    for block in active[index + 1 :]:
+        if block.get("type") == "heading_2":
+            break
+        if block.get("type") == "image" and block.get("id"):
+            image_ids.append(block["id"])
+    return image_ids
 
 
 def runtime_block_is_in_place(
