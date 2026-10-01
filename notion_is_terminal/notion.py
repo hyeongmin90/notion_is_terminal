@@ -893,6 +893,19 @@ def help_page_children() -> list[dict[str, Any]]:
             "Treat the parent page as a tool surface. Read Terminal before acting. Write exactly one command or control action to Input, "
             "wait for Input to reset, then read Terminal or Browser Status again before the next action."
         ),
+        heading_payload("ChatGPT Connections"),
+        bulleted_payload("Required for GPT Web control — connect Notion and grant ChatGPT access to the Terminal4GPTWeb control page and Help page."),
+        bulleted_payload("Recommended for development — connect GitHub so GPT can read repository history, issues, pull requests, and code while using the local terminal for builds and tests."),
+        bulleted_payload("Optional for operations — use ChatGPT scheduled tasks/automations, where available, to run recurring health checks through this Notion control surface."),
+        paragraph_payload(
+            "A useful development pattern is: GitHub for repository context and code review, Terminal4GPTWeb for local execution, "
+            "and Playwright + Vision for browser E2E verification."
+        ),
+        heading_payload("Example Workflows"),
+        bulleted_payload("Development — inspect a GitHub issue or diff, edit locally, run tests in Terminal, then verify the UI with Playwright."),
+        bulleted_payload("Browser E2E — open the local app, inspect the screenshot with Vision, interact through coordinates/keyboard, and verify the resulting observation."),
+        bulleted_payload("OPS — inspect process/container status, health endpoints, recent logs, disk/memory usage, and report only actionable failures."),
+        bulleted_payload("Scheduled OPS — periodically ask GPT to inspect the Notion control surface, run a fixed health checklist, and notify only when a check fails."),
         bulleted_payload("Shell: write after > and include a trailing blank line. Example: > pwd"),
         bulleted_payload("Never assume a browser coordinate from an old screenshot. Use the latest Browser Status observation_id."),
         bulleted_payload("For visual browser reasoning, fetch vision_page_url, decode data_base64 as image/jpeg, and verify observation_id matches."),
