@@ -29,6 +29,7 @@ class TerminalSettings:
     rows: int = 40
     poll_interval: float = 1.2
     refresh_interval: float = 1.5
+    health_check_interval: float = 10.0
     show_cursor: bool = True
     source_bashrc: bool = True
 
@@ -69,6 +70,7 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         rows=int(terminal_raw.get("rows", 40)),
         poll_interval=float(terminal_raw.get("poll_interval", 1.2)),
         refresh_interval=float(terminal_raw.get("refresh_interval", 1.5)),
+        health_check_interval=float(terminal_raw.get("health_check_interval", 10.0)),
         show_cursor=bool(terminal_raw.get("show_cursor", True)),
         source_bashrc=bool(terminal_raw.get("source_bashrc", True)),
     )
@@ -81,7 +83,8 @@ def write_config(config: AppConfig, path: Path | str = DEFAULT_CONFIG_PATH) -> P
     config_path = Path(path).expanduser()
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
-    text = "\n".join(
+    text = "
+".join(
         [
             "[notion]",
             f'token = {_toml_string(config.notion.token)}',
@@ -100,6 +103,7 @@ def write_config(config: AppConfig, path: Path | str = DEFAULT_CONFIG_PATH) -> P
             f"rows = {config.terminal.rows}",
             f"poll_interval = {config.terminal.poll_interval}",
             f"refresh_interval = {config.terminal.refresh_interval}",
+            f"health_check_interval = {config.terminal.health_check_interval}",
             f"show_cursor = {'true' if config.terminal.show_cursor else 'false'}",
             f"source_bashrc = {'true' if config.terminal.source_bashrc else 'false'}",
             "",
@@ -130,8 +134,11 @@ def _validate_terminal(settings: TerminalSettings) -> None:
         raise ValueError("terminal.poll_interval must be >= 0.5 seconds")
     if settings.refresh_interval < 0.5:
         raise ValueError("terminal.refresh_interval must be >= 0.5 seconds")
+    if settings.health_check_interval < 3.0:
+        raise ValueError("terminal.health_check_interval must be >= 3.0 seconds")
 
 
 def _toml_string(value: str) -> str:
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    escaped = value.replace("\", "\\").replace('"', '\"').replace("
+", "\n")
     return f'"{escaped}"'
