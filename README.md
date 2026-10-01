@@ -205,16 +205,20 @@ Other immediate control tokens:
 ^\
 ```
 
-## Special keys
+## Input control reference
 
-Submit special keys through the Input block:
+Long and short forms are both supported:
 
-```text
-> :key UP
+| Action | Long form | Short form | Example |
+| --- | --- | --- | --- |
+| Special key | `:key NAME` | `:k NAME` | `:k ENTER` |
+| Ctrl key | `:ctrl KEY` | `:c KEY` | `:c O` |
+| Raw input | `:send TEXT` | `:s TEXT` | `:s \\e:wq\\r` |
+| Resize | `:resize COLSxROWS` | `:rs COLSxROWS` | `:rs 140x50` |
 
-```
+### Special keys
 
-Supported names:
+Supported key names:
 
 ```text
 UP DOWN LEFT RIGHT
@@ -224,15 +228,57 @@ TAB ENTER ESC BACKSPACE
 F1 ... F12
 ```
 
-Aliases include `PGUP`, `PGDN`, `DEL`, `INS`, and `RETURN`.
+Key aliases:
 
-## Raw input
+```text
+ENTER      RETURN RET ENT
+BACKSPACE  BS BKSP
+ESC        ESCAPE
+DELETE     DEL
+INSERT     INS
+PAGEUP     PGUP
+PAGEDOWN   PGDN
+```
 
-For programs that need input without an automatic Enter:
+Examples:
+
+```text
+> :k ENTER
+> :k BS
+> :k LEFT
+> :k PGUP
+```
+
+A key command sends the actual terminal key sequence. This matters for full-screen TUI programs such as Codex, Claude Code, nano, vim, and less.
+
+### Ctrl keys
+
+Use either form:
+
+```text
+> :ctrl O
+> :c O
+```
+
+Examples:
+
+```text
+:c C    Ctrl-C
+:c D    Ctrl-D
+:c O    Ctrl-O
+:c X    Ctrl-X
+:c W    Ctrl-W
+```
+
+The common `^C`, `^D`, `^Z`, `^L`, and `^\\` tokens are also recognized immediately without the extra blank-line submit.
+
+### Raw input
+
+For programs that need exact bytes without an automatic Enter:
 
 ```text
 > :send ihello
-
+> :s ihello
 ```
 
 Supported escapes:
@@ -249,20 +295,78 @@ Supported escapes:
 Example while inside Vim:
 
 ```text
-:send \e:wq\r
-
+> :s \e:wq\r
 ```
 
-This sends Escape, `:wq`, and Enter to the PTY.
+This sends Escape, `:wq`, and Enter directly to the PTY.
 
-## Resize
+### Resize
 
 ```text
 > :resize 140x50
-
+> :rs 140x50
 ```
 
 This updates the PTY window size, terminal emulator size, and sends the normal terminal resize signal.
+
+## Common TUI recipes
+
+### Codex / Claude Code
+
+Normal text can be entered through the Input block. Some TUIs use paste detection, so the text may appear in the TUI input box without being submitted. In that case, send Enter separately:
+
+```text
+> :k ENTER
+```
+
+Editing the current TUI input:
+
+```text
+> :k BS
+> :k LEFT
+> :k RIGHT
+```
+
+### nano
+
+Save:
+
+```text
+> :c O
+```
+
+Confirm the filename:
+
+```text
+> :k ENTER
+```
+
+Exit:
+
+```text
+> :c X
+```
+
+Search:
+
+```text
+> :c W
+```
+
+### vim
+
+Save and quit in one raw sequence:
+
+```text
+> :s \e:wq\r
+```
+
+Quit without saving:
+
+```text
+> :s \e:q!\r
+```
+
 
 ## TUI applications
 
