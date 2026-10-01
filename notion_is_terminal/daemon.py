@@ -88,18 +88,18 @@ class TerminalDaemon:
                 try:
                     self.notion.update_code_block(
                         self.config.notion.input_block_id,
-                        "[DAEMON STOPPED] Start with: notion-terminal daemon start",
+                        "[DAEMON STOPPED] Start with: t4g daemon start",
                         language="plain text",
                     )
                 except NotionError:
                     pass
             else:
                 self._dirty = True
-                self._write_terminal(force=True, suffix="\n\n[notion_is_terminal: shell session ended]")
+                self._write_terminal(force=True, suffix="\n\n[Terminal4GPTWeb: shell session ended]")
                 try:
                     self.notion.update_code_block(
                         self.config.notion.input_block_id,
-                        "[SESSION ENDED] Restart with: notion-terminal run",
+                        "[SESSION ENDED] Restart with: t4g run",
                         language="plain text",
                     )
                 except NotionError:
@@ -380,7 +380,7 @@ class TerminalDaemon:
             if exc.is_not_found:
                 raise RuntimeError(
                     "The configured Notion terminal page no longer exists or is not accessible. "
-                    "Run `notion-terminal init` again if the page was deleted."
+                    "Run `t4g init` again if the page was deleted."
                 ) from exc
             print(f"[notion] runtime block health check failed: {exc}")
 
@@ -397,7 +397,7 @@ class TerminalDaemon:
             if exc.is_not_found:
                 raise RuntimeError(
                     "The configured Notion terminal page no longer exists or is not accessible. "
-                    "Run `notion-terminal init` again if the page was deleted."
+                    "Run `t4g init` again if the page was deleted."
                 ) from exc
             print(f"[notion] runtime block recovery failed: {exc}")
 

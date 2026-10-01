@@ -1,10 +1,10 @@
-# notion_is_terminal
+# Terminal4GPTWeb
 
 [한국어](./README.ko.md)
 
 **Give GPT on the web a real terminal surface without exposing a shell server to the internet.**
 
-`notion_is_terminal` turns Notion into a bridge between a web-based GPT session, a persistent Linux PTY, and a Playwright-controlled browser.
+`Terminal4GPTWeb` turns Notion into a bridge between a web-based GPT session, a persistent Linux PTY, and a Playwright-controlled browser.
 
 When GPT can read and edit the generated Notion page through a Notion connector, it can:
 
@@ -35,7 +35,7 @@ This project uses Notion as a lightweight bridge:
 
 1. GPT reads the **Terminal** block.
 2. GPT writes commands or key events to the **Input** block.
-3. `notion-terminal` polls that block and forwards the input to a real PTY.
+3. `t4g` polls that block and forwards the input to a real PTY.
 4. The PTY output is rendered back into the **Terminal** block.
 5. GPT reads the updated screen and continues.
 
@@ -61,7 +61,7 @@ No public SSH endpoint, custom web server, database, or message queue is require
                                       ││ Notion API
                                       ││
                               ┌───────▼▼────────┐
-                              │ notion-terminal │
+                              │ t4g │
                               │     daemon      │
                               └───────┬─────────┘
                                       │
@@ -122,8 +122,8 @@ Tested interaction patterns include Bash, Python REPL, nano, vim-style key seque
 ## Install
 
 ```bash
-git clone https://github.com/hyeongmin90/notion_is_terminal.git
-cd notion_is_terminal
+git clone https://github.com/hyeongmin90/terminal4gptweb.git
+cd terminal4gptweb
 
 python -m venv .venv
 source .venv/bin/activate
@@ -136,9 +136,11 @@ The second command installs the Chromium binary used by the browser controller.
 This installs:
 
 ```bash
-notion-terminal
-nit
+terminal4gptweb
+t4g
 ```
+
+Legacy compatibility aliases `notion-terminal` and `nit` are also kept for now.
 
 ---
 
@@ -149,7 +151,7 @@ Create a Notion internal integration and give it access to a parent page.
 Then run:
 
 ```bash
-notion-terminal init
+t4g init
 ```
 
 The wizard creates a child page with two runtime blocks:
@@ -177,17 +179,17 @@ The config is chmod `0600` where supported.
 For normal use:
 
 ```bash
-notion-terminal daemon start
+t4g daemon start
 ```
 
 Lifecycle commands:
 
 ```bash
-notion-terminal daemon status
-notion-terminal daemon restart
-notion-terminal daemon stop
-notion-terminal daemon logs
-notion-terminal daemon logs -f
+t4g daemon status
+t4g daemon restart
+t4g daemon stop
+t4g daemon logs
+t4g daemon logs -f
 ```
 
 Runtime files:
@@ -203,7 +205,7 @@ The daemon survives closing the WSL terminal window. It does not currently auto-
 Foreground mode is available for debugging:
 
 ```bash
-notion-terminal run
+t4g run
 ```
 
 ---
@@ -216,7 +218,7 @@ A typical flow:
 
 ```text
 You:
-Check my Notion Terminal and run git status.
+Check my Terminal4GPTWeb page and run git status.
 
 GPT:
 1. reads the Terminal block
@@ -479,7 +481,7 @@ vision_max_base64_chars = 160000
 ## Diagnostics
 
 ```bash
-notion-terminal doctor
+t4g doctor
 ```
 
 Checks config, Linux / WSL environment, shell path, working directory, Notion page access, and both runtime blocks.

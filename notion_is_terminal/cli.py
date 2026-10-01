@@ -23,8 +23,8 @@ from .wizard import run_init
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="notion-terminal",
-        description="Use a Notion page as a remote PTY terminal UI.",
+        prog="t4g",
+        description="Bridge GPT Web to local terminal and Playwright browser tools through Notion.",
     )
     parser.add_argument("--version", action="version", version=__version__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -76,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "run":
             config = load_config(args.config)
             with InstanceLock():
-                print(f"notion_is_terminal {__version__}")
+                print(f"Terminal4GPTWeb {__version__}")
                 if config.notion.page_url:
                     print(f"Notion: {config.notion.page_url}")
                 print("Starting persistent PTY in foreground. Press Ctrl-C here to stop.")

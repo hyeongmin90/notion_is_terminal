@@ -10,7 +10,7 @@ from .notion import NotionClient, parse_page_id
 
 
 def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
-    print("notion_is_terminal setup")
+    print("Terminal4GPTWeb setup")
     print(
         "Creates one Notion page with a persistent terminal plus a Playwright "
         "browser observation surface for GPT.\n"
@@ -29,7 +29,7 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
     rows = int(_prompt("Terminal rows", "40"))
     poll_interval = float(_prompt("Input poll interval (seconds)", "1.2"))
     refresh_interval = float(_prompt("Screen refresh interval (seconds)", "1.5"))
-    title = _prompt("Notion page title", "Notion Terminal")
+    title = _prompt("Notion page title", "Terminal4GPTWeb")
 
     terminal = TerminalSettings(
         shell=shell,
@@ -54,7 +54,7 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         created = notion.create_terminal_page(
             parent_page_id=parent_page_id,
             title=title,
-            terminal_text="notion_is_terminal\n\nLocal PTY is not connected yet. Run: notion-terminal run",
+            terminal_text="Terminal4GPTWeb\n\nLocal PTY is not connected yet. Run: t4g run",
             input_text=terminal.input_prompt,
         )
         vision_page = notion.ensure_browser_vision_page(
@@ -109,7 +109,7 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
     print(f"✓ Config written: {written}")
     if created.page_url:
         print(f"\nPage: {created.page_url}")
-    print("\nStart in background with:\n  notion-terminal daemon start\n\nOr run in foreground with:\n  notion-terminal run")
+    print("\nStart in background with:\n  t4g daemon start\n\nOr run in foreground with:\n  t4g run")
     print("\nThe generated Notion page contains the input/control reference.")
     return config
 

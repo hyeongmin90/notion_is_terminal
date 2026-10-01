@@ -1,10 +1,10 @@
-# notion_is_terminal
+# Terminal4GPTWeb
 
 [English](./README.md)
 
 **GPT 웹에 로컬 WSL/Linux 셸 서버를 직접 노출하지 않고도 실제 터미널 도구를 연결합니다.**
 
-`notion_is_terminal`은 Notion을 **GPT 웹 세션, 로컬 Linux PTY, Playwright 브라우저 사이의 브리지**로 사용합니다.
+`Terminal4GPTWeb`은 Notion을 **GPT 웹 세션, 로컬 Linux PTY, Playwright 브라우저 사이의 브리지**로 사용합니다.
 
 GPT가 Notion 커넥터를 통해 생성된 페이지를 읽고 수정할 수 있다면 다음과 같은 작업이 가능합니다.
 
@@ -35,7 +35,7 @@ GPT 웹은 코드 분석, 문제 해결, 원격 작업 지시에 편리하지만
 
 1. GPT가 **Terminal** 블록을 읽습니다.
 2. GPT가 **Input** 블록에 명령 또는 키 입력을 작성합니다.
-3. `notion-terminal` daemon이 이를 읽어 실제 PTY로 전달합니다.
+3. `t4g` daemon이 이를 읽어 실제 PTY로 전달합니다.
 4. PTY 화면을 다시 **Terminal** 블록에 렌더링합니다.
 5. GPT가 갱신된 화면을 읽고 다음 작업을 이어갑니다.
 
@@ -61,7 +61,7 @@ GPT 웹은 코드 분석, 문제 해결, 원격 작업 지시에 편리하지만
                                       ││ Notion API
                                       ││
                               ┌───────▼▼────────┐
-                              │ notion-terminal │
+                              │ t4g │
                               │     daemon      │
                               └───────┬─────────┘
                                       │
@@ -124,8 +124,8 @@ ANSI cursor 이동, 화면 지우기, scrolling, redraw sequence를 로컬에서
 ## 설치
 
 ```bash
-git clone https://github.com/hyeongmin90/notion_is_terminal.git
-cd notion_is_terminal
+git clone https://github.com/hyeongmin90/terminal4gptweb.git
+cd terminal4gptweb
 
 python -m venv .venv
 source .venv/bin/activate
@@ -135,12 +135,14 @@ playwright install chromium
 
 두 번째 명령은 browser controller가 사용할 Chromium binary를 설치합니다.
 
-다음 두 명령이 설치됩니다.
+기본 명령은 다음과 같습니다.
 
 ```bash
-notion-terminal
-nit
+terminal4gptweb
+t4g
 ```
+
+기존 `notion-terminal`, `nit`도 당분간 호환 alias로 유지합니다.
 
 ---
 
@@ -151,7 +153,7 @@ Notion internal integration을 만들고 사용할 parent page를 integration에
 이후:
 
 ```bash
-notion-terminal init
+t4g init
 ```
 
 wizard가 다음 형태의 child page를 생성합니다.
@@ -179,17 +181,17 @@ Input
 일반적으로는 daemon 모드를 권장합니다.
 
 ```bash
-notion-terminal daemon start
+t4g daemon start
 ```
 
 관리 명령:
 
 ```bash
-notion-terminal daemon status
-notion-terminal daemon restart
-notion-terminal daemon stop
-notion-terminal daemon logs
-notion-terminal daemon logs -f
+t4g daemon status
+t4g daemon restart
+t4g daemon stop
+t4g daemon logs
+t4g daemon logs -f
 ```
 
 runtime 파일:
@@ -207,7 +209,7 @@ WSL 터미널 창을 닫아도 daemon은 계속 실행됩니다.
 디버깅할 때는 foreground 실행도 가능합니다.
 
 ```bash
-notion-terminal run
+t4g run
 ```
 
 ---
@@ -220,7 +222,7 @@ notion-terminal run
 
 ```text
 사용자:
-Notion Terminal 확인해서 git status 실행해줘.
+Terminal4GPTWeb 페이지 확인해서 git status 실행해줘.
 
 GPT:
 1. Terminal 블록 확인
@@ -487,7 +489,7 @@ vision_max_base64_chars = 160000
 ## 진단
 
 ```bash
-notion-terminal doctor
+t4g doctor
 ```
 
 config, Linux / WSL 환경, shell 경로, working directory, Notion page 접근, Terminal/Input block을 확인합니다.

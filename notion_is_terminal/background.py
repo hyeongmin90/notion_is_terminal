@@ -30,7 +30,7 @@ class InstanceLock:
         except BlockingIOError:
             stream.close()
             raise RuntimeError(
-                "another notion_is_terminal session is already running "
+                "another Terminal4GPTWeb session is already running "
                 "(foreground or daemon)"
             )
 
@@ -57,7 +57,7 @@ def start_daemon(config_path: Path | str = DEFAULT_CONFIG_PATH) -> int:
 
     existing = read_pid()
     if existing and process_is_our_daemon(existing):
-        print(f"notion_is_terminal daemon is already running (pid {existing}).")
+        print(f"Terminal4GPTWeb daemon is already running (pid {existing}).")
         return 0
     if existing:
         _remove_pid_file()
@@ -98,7 +98,7 @@ def start_daemon(config_path: Path | str = DEFAULT_CONFIG_PATH) -> int:
         print(f"daemon failed to start; check {LOG_FILE}", file=sys.stderr)
         return process.returncode or 1
 
-    print(f"started notion_is_terminal daemon (pid {process.pid})")
+    print(f"started Terminal4GPTWeb daemon (pid {process.pid})")
     print(f"log: {LOG_FILE}")
     return 0
 
@@ -106,7 +106,7 @@ def start_daemon(config_path: Path | str = DEFAULT_CONFIG_PATH) -> int:
 def stop_daemon(*, timeout: float = 5.0) -> int:
     pid = read_pid()
     if not pid:
-        print("notion_is_terminal daemon is not running.")
+        print("Terminal4GPTWeb daemon is not running.")
         return 0
 
     if not process_is_our_daemon(pid):
@@ -118,14 +118,14 @@ def stop_daemon(*, timeout: float = 5.0) -> int:
         os.kill(pid, signal.SIGTERM)
     except ProcessLookupError:
         _remove_pid_file()
-        print("notion_is_terminal daemon is not running.")
+        print("Terminal4GPTWeb daemon is not running.")
         return 0
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if not process_exists(pid):
             _remove_pid_file()
-            print("stopped notion_is_terminal daemon.")
+            print("stopped Terminal4GPTWeb daemon.")
             return 0
         time.sleep(0.1)
 
@@ -140,7 +140,7 @@ def stop_daemon(*, timeout: float = 5.0) -> int:
         time.sleep(0.05)
 
     _remove_pid_file()
-    print("stopped notion_is_terminal daemon (forced).")
+    print("stopped Terminal4GPTWeb daemon (forced).")
     return 0
 
 
@@ -156,10 +156,10 @@ def daemon_status(config_path: Path | str = DEFAULT_CONFIG_PATH) -> int:
     if not pid or not process_is_our_daemon(pid):
         if pid:
             _remove_pid_file()
-        print("notion_is_terminal daemon: stopped")
+        print("Terminal4GPTWeb daemon: stopped")
         return 1
 
-    print(f"notion_is_terminal daemon: running (pid {pid})")
+    print(f"Terminal4GPTWeb daemon: running (pid {pid})")
     try:
         config = load_config(config_path)
         if config.notion.page_url:

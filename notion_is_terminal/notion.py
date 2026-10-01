@@ -79,7 +79,7 @@ class NotionClient:
             headers={
                 "Authorization": f"Bearer {token}",
                 "Notion-Version": api_version,
-                "User-Agent": "notion-is-terminal/0.1",
+                "User-Agent": "terminal4gptweb/0.1",
             },
         )
 
@@ -300,7 +300,7 @@ class NotionClient:
                     "For TUI programs, use the key/control commands below when a real key press is required."
                 ),
                 code_block_payload(input_text, language="bash"),
-                callout_payload("Runtime blocks were automatically recreated by notion_is_terminal.", "♻️"),
+                callout_payload("Runtime blocks were automatically recreated by Terminal4GPTWeb.", "♻️"),
             ]
         })
         terminal_id, input_id = _runtime_code_block_ids(children.get("results", []))
@@ -524,7 +524,7 @@ class NotionClient:
             raise NotionError("Browser Screenshot anchor is missing.")
 
         file_upload_id = self.upload_file(
-            filename="notion-terminal-browser.png",
+            filename="terminal4gptweb-browser.png",
             data=image_bytes,
             content_type="image/png",
         )
@@ -819,7 +819,7 @@ def runtime_blocks_are_in_place(
 def terminal_page_children(terminal_text: str, input_text: str) -> list[dict[str, Any]]:
     return [
         callout_payload(
-            "This page is a live remote terminal. Anything submitted in Input runs on the local Linux/WSL user running notion-terminal.",
+            "This page is a live remote terminal. Anything submitted in Input runs on the local Linux/WSL user running Terminal4GPTWeb.",
             "⚠️",
         ),
         heading_payload("Terminal"),
