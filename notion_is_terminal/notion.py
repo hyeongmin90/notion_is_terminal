@@ -71,6 +71,12 @@ class BrowserVisionPage:
     recreated: bool = False
 
 
+@dataclass(slots=True)
+class HelpPage:
+    page_id: str
+    page_url: str
+
+
 class NotionClient:
     def __init__(self, token: str, *, api_version: str = "2026-03-11", timeout: float = 15.0) -> None:
         self._client = httpx.Client(
@@ -160,6 +166,29 @@ class NotionClient:
             terminal_block_id=terminal_id,
             input_block_id=input_id,
         )
+
+    def create_help_page(
+        self,
+        *,
+        parent_page_id: str,
+        title: str = "Terminal4GPTWeb Help",
+    ) -> HelpPage:
+        page = self._request("POST", "/pages", json={
+            "parent": {"type": "page_id", "page_id": parent_page_id},
+            "properties": {
+                "title": {
+                    "type": "title",
+                    "title": [{"type": "text", "text": {"content": title}}],
+                }
+            },
+        })
+        page_id = page["id"]
+        self._request(
+            "PATCH",
+            f"/blocks/{page_id}/children",
+            json={"children": help_page_children()},
+        )
+        return HelpPage(page_id=page_id, page_url=page.get("url", ""))
 
     def ensure_runtime_blocks(
         self,
