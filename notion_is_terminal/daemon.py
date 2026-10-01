@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import selectors
 import signal
 import time
@@ -355,7 +356,7 @@ class TerminalDaemon:
     def _write_terminal(self, *, force: bool = False, suffix: str = "") -> None:
         if not force and not self._dirty:
             return
-        text = self.session.render() + suffix
+        text = sanitize_terminal_for_notion(self.session.render() + suffix)
         if not force and text == self._last_terminal_written:
             self._dirty = False
             return
@@ -402,7 +403,7 @@ class TerminalDaemon:
             print(f"[notion] runtime block recovery failed: {exc}")
 
     def _ensure_runtime_blocks(self) -> None:
-        terminal_text = self.session.render()
+        terminal_text = sanitize_terminal_for_notion(self.session.render())
         input_text = self.input_prompt
         blocks = self.notion.ensure_runtime_blocks(
             page_id=self.config.notion.page_id,
@@ -424,3 +425,16 @@ class TerminalDaemon:
 
         print("[notion] one or more runtime blocks were missing, invalid, or misplaced.")
         print("[notion] repaired only the affected runtime block(s) and updated config.toml.")
+
+
+
+_BACKTICK_RUN = re.compile(r"`{3,}")
+
+
+def sanitize_terminal_for_notion(text: str) -> str:
+    """Prevent terminal output from becoming Markdown fences in connector serialization."""
+    def split_run(match: re.Match[str]) -> str:
+        run = match.group(0)
+        return "\u200b".join(run[i : i + 2] for i in range(0, len(run), 2))
+
+    return _BACKTICK_RUN.sub(split_run, text)
