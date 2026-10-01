@@ -118,7 +118,9 @@ class NotionClient:
         })
 
     def archive_block(self, block_id: str) -> None:
-        self._request("PATCH", f"/blocks/{block_id}", json={"archived": True})
+        # Notion API 2026-03-11 removes blocks through DELETE. The returned
+        # block is marked in_trash=true and can still be restored in Notion.
+        self._request("DELETE", f"/blocks/{block_id}")
 
     def create_terminal_page(
         self,
@@ -385,6 +387,21 @@ class NotionClient:
             image_block_id="",
             recreated=True,
         )
+
+    def clear_browser_images(self, *, page_id: str) -> bool:
+        children = self.get_block_children(page_id)
+        anchors = find_browser_anchors(children)
+        if anchors is None:
+            return False
+
+        removed = False
+        for block_id in browser_screenshot_image_ids(
+            children,
+            anchor_id=anchors.screenshot_anchor_id,
+        ):
+            self.archive_block(block_id)
+            removed = True
+        return removed
 
     def replace_browser_image(
         self,
