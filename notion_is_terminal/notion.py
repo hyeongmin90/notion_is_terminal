@@ -63,6 +63,14 @@ class BrowserAnchors:
     screenshot_anchor_id: str
 
 
+@dataclass(slots=True)
+class BrowserVisionPage:
+    page_id: str
+    page_url: str
+    block_id: str
+    recreated: bool = False
+
+
 class NotionClient:
     def __init__(self, token: str, *, api_version: str = "2026-03-11", timeout: float = 15.0) -> None:
         self._client = httpx.Client(
@@ -299,6 +307,100 @@ class NotionClient:
         return RuntimeBlocks(
             terminal_block_id=terminal_id,
             input_block_id=input_id,
+            recreated=True,
+        )
+
+    def ensure_browser_vision_page(
+        self,
+        *,
+        parent_page_id: str,
+        page_id: str,
+        block_id: str,
+        idle_text: str,
+    ) -> BrowserVisionPage:
+        page: dict[str, Any] | None = None
+        if page_id:
+            try:
+                page = self.get_page(page_id)
+            except NotionError as exc:
+                if not exc.is_not_found:
+                    raise
+
+        if page is not None and not page.get("archived") and not page.get("in_trash"):
+            block = self._try_get_block(block_id) if block_id else None
+            if block_is_usable_code(block):
+                return BrowserVisionPage(
+                    page_id=page_id,
+                    page_url=page.get("url", ""),
+                    block_id=block_id,
+                    recreated=False,
+                )
+
+            if block is not None and not block.get("archived") and not block.get("in_trash"):
+                self.archive_block(block_id)
+
+            response = self._request(
+                "PATCH",
+                f"/blocks/{page_id}/children",
+                json={"children": [code_block_payload(idle_text, language="plain text")]},
+            )
+            code_blocks = [
+                item for item in response.get("results", [])
+                if item.get("type") == "code"
+            ]
+            if not code_blocks:
+                raise NotionError("Notion did not return the Browser Vision code block.")
+            return BrowserVisionPage(
+                page_id=page_id,
+                page_url=page.get("url", ""),
+                block_id=code_blocks[0]["id"],
+                recreated=True,
+            )
+
+        vision_page = self._request(
+            "POST",
+            "/pages",
+            json={
+                "parent": {"type": "page_id", "page_id": parent_page_id},
+                "properties": {
+                    "title": {
+                        "type": "title",
+                        "title": [
+                            {
+                                "type": "text",
+                                "text": {"content": "Browser Vision Payload"},
+                            }
+                        ],
+                    }
+                },
+            },
+        )
+        new_page_id = vision_page["id"]
+        response = self._request(
+            "PATCH",
+            f"/blocks/{new_page_id}/children",
+            json={
+                "children": [
+                    callout_payload(
+                        "Machine-readable compressed browser screenshot for GPT Vision. "
+                        "Do not edit this page manually.",
+                        "👁️",
+                    ),
+                    code_block_payload(idle_text, language="plain text"),
+                ]
+            },
+        )
+        code_blocks = [
+            item for item in response.get("results", [])
+            if item.get("type") == "code"
+        ]
+        if not code_blocks:
+            raise NotionError("Notion did not return the Browser Vision code block.")
+
+        return BrowserVisionPage(
+            page_id=new_page_id,
+            page_url=vision_page.get("url", ""),
+            block_id=code_blocks[0]["id"],
             recreated=True,
         )
 
