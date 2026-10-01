@@ -6,6 +6,7 @@ from notion_is_terminal.notion import (
     RuntimeAnchors,
     RuntimeBlocks,
     block_is_usable_code,
+    browser_screenshot_image_ids,
     find_browser_anchors,
     find_runtime_anchors,
     parse_page_id,
@@ -188,3 +189,14 @@ def test_find_browser_anchors():
         {"id": "a-shot", "type": "paragraph", "paragraph": {"rich_text": _rich("latest image")}},
     ]
     assert find_browser_anchors(children) == BrowserAnchors("a-browser", "a-shot")
+
+
+def test_browser_screenshot_image_ids_stop_at_next_section():
+    children = [
+        {"id": "anchor", "type": "paragraph", "paragraph": {"rich_text": _rich("latest")}},
+        {"id": "image-1", "type": "image", "image": {}},
+        {"id": "image-2", "type": "image", "image": {}},
+        {"id": "next", "type": "heading_2", "heading_2": {"rich_text": _rich("Other")}},
+        {"id": "image-3", "type": "image", "image": {}},
+    ]
+    assert browser_screenshot_image_ids(children, anchor_id="anchor") == ["image-1", "image-2"]
