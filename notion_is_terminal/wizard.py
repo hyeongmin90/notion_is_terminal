@@ -11,7 +11,10 @@ from .notion import NotionClient, parse_page_id
 
 def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
     print("notion_is_terminal setup")
-    print("Creates one Notion page containing exactly two code blocks: Terminal + Input.\n")
+    print(
+        "Creates one Notion terminal page with help text plus exactly two "
+        "runtime code blocks: Terminal + Input.\n"
+    )
 
     token = getpass.getpass("Notion integration token: ").strip()
     if not token:
@@ -37,6 +40,7 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         rows=rows,
         poll_interval=poll_interval,
         refresh_interval=refresh_interval,
+        health_check_interval=10.0,
         show_cursor=True,
         source_bashrc=True,
     )
@@ -65,15 +69,15 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
     written = write_config(config, config_path)
 
     print("\n✓ Notion connection verified")
-    print("✓ Terminal page created")
+    print("✓ Terminal page and built-in controls guide created")
     print("✓ Terminal code block created")
     print("✓ Input code block created")
+    print("✓ Runtime block self-healing enabled (10 second health check)")
     print(f"✓ Config written: {written}")
     if created.page_url:
         print(f"\nPage: {created.page_url}")
     print("\nStart the daemon with:\n  notion-terminal run")
-    print("\nInput rule: type in Input, then press Enter twice to send.")
-    print("Ctrl-C can be sent immediately by typing ^C after the prompt.")
+    print("\nThe generated Notion page contains the input/control reference.")
     return config
 
 
