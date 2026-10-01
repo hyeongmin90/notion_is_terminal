@@ -95,12 +95,18 @@ def test_runtime_pair_at_page_end_is_not_considered_in_place():
 
 
 class FakeNotionClient(NotionClient):
-    def __init__(self):
+    def __init__(self, *, missing: str):
+        self.missing = missing
         self.blocks = {
-            "input-old": {"id": "input-old", "type": "code", "archived": False, "in_trash": False}
+            "terminal-old": {"id": "terminal-old", "type": "code", "archived": False, "in_trash": False},
+            "input-old": {"id": "input-old", "type": "code", "archived": False, "in_trash": False},
         }
+        if missing == "terminal":
+            del self.blocks["terminal-old"]
+        if missing == "input":
+            del self.blocks["input-old"]
         self.archived = []
-        self.restored = False
+        self.restored = []
 
     def get_page(self, page_id):
         assert page_id == "page"
@@ -113,39 +119,59 @@ class FakeNotionClient(NotionClient):
 
     def get_block_children(self, block_id):
         assert block_id == "page"
-        return [
+        children = [
             {"id": "h-terminal", "type": "heading_2", "heading_2": {"rich_text": _rich("Terminal")}},
             {"id": "a-terminal", "type": "paragraph", "paragraph": {"rich_text": _rich("Live PTY")}},
+        ]
+        if "terminal-old" in self.blocks:
+            children.append(self.blocks["terminal-old"])
+        children.extend([
             {"id": "h-input", "type": "heading_2", "heading_2": {"rich_text": _rich("Input")}},
             {"id": "a-input", "type": "paragraph", "paragraph": {"rich_text": _rich("Input help")}},
-            self.blocks["input-old"],
-        ]
+        ])
+        if "input-old" in self.blocks:
+            children.append(self.blocks["input-old"])
+        return children
 
     def archive_block(self, block_id):
         self.archived.append(block_id)
         self.blocks[block_id]["archived"] = True
 
-    def restore_runtime_blocks_at_anchors(self, *, page_id, anchors, terminal_text, input_text):
+    def restore_runtime_block_at_anchor(self, *, page_id, anchor_id, text, language):
         assert page_id == "page"
-        assert anchors == RuntimeAnchors("a-terminal", "a-input")
-        assert terminal_text == "current screen"
-        assert input_text == "> "
-        self.restored = True
-        return RuntimeBlocks("terminal-new", "input-new", recreated=True)
+        self.restored.append((anchor_id, text, language))
+        return "terminal-new" if anchor_id == "a-terminal" else "input-new"
 
 
-def test_missing_runtime_block_restores_pair_at_anchors_and_archives_survivor():
-    notion = FakeNotionClient()
+def test_missing_terminal_reuses_existing_input_block():
+    notion = FakeNotionClient(missing="terminal")
     blocks = notion.ensure_runtime_blocks(
         page_id="page",
-        terminal_block_id="terminal-missing",
+        terminal_block_id="terminal-old",
         input_block_id="input-old",
         terminal_text="current screen",
         input_text="> ",
     )
 
-    assert notion.restored is True
-    assert notion.archived == ["input-old"]
+    assert notion.archived == []
+    assert notion.restored == [("a-terminal", "current screen", "plain text")]
     assert blocks.recreated is True
     assert blocks.terminal_block_id == "terminal-new"
+    assert blocks.input_block_id == "input-old"
+
+
+def test_missing_input_reuses_existing_terminal_block():
+    notion = FakeNotionClient(missing="input")
+    blocks = notion.ensure_runtime_blocks(
+        page_id="page",
+        terminal_block_id="terminal-old",
+        input_block_id="input-old",
+        terminal_text="current screen",
+        input_text="> ",
+    )
+
+    assert notion.archived == []
+    assert notion.restored == [("a-input", "> ", "bash")]
+    assert blocks.recreated is True
+    assert blocks.terminal_block_id == "terminal-old"
     assert blocks.input_block_id == "input-new"
