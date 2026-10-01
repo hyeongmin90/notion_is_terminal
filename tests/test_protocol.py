@@ -79,3 +79,21 @@ def test_short_resize():
 
 def test_decode_escapes_preserves_unicode():
     assert decode_escapes(r"한글\n") == "한글\n"
+
+
+def test_browser_short_command():
+    action, reset = extract_submission(PROMPT + ":b shot\n\n", PROMPT)
+    assert reset is True
+    assert action is not None
+    assert action.kind is InputKind.BROWSER
+    assert action.value == "shot"
+
+
+def test_browser_long_command_preserves_arguments():
+    action, _ = extract_submission(
+        PROMPT + ":browser click obs_1 120 240\n\n",
+        PROMPT,
+    )
+    assert action is not None
+    assert action.kind is InputKind.BROWSER
+    assert action.value == "click obs_1 120 240"
