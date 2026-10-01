@@ -44,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
             if config.notion.page_url:
                 print(f"Notion: {config.notion.page_url}")
             print("Starting persistent PTY. Press Ctrl-C here to stop the local daemon.")
-            TerminalDaemon(config).run()
+            TerminalDaemon(config, config_path=args.config).run()
             return 0
         if args.command == "doctor":
             return doctor(args.config)
@@ -76,8 +76,8 @@ def doctor(config_path: Path) -> int:
             notion.get_page(config.notion.page_id)
             terminal = notion.get_block(config.notion.terminal_block_id)
             input_block = notion.get_block(config.notion.input_block_id)
-        checks.append((terminal.get("type") == "code", "Terminal block is a code block"))
-        checks.append((input_block.get("type") == "code", "Input block is a code block"))
+        checks.append((terminal.get("type") == "code" and not terminal.get("archived", False), "Terminal block is active"))
+        checks.append((input_block.get("type") == "code" and not input_block.get("archived", False), "Input block is active"))
         checks.append((True, "Notion page is readable"))
     except NotionError as exc:
         checks.append((False, f"Notion access: {exc}"))
