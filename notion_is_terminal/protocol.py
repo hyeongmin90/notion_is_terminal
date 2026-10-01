@@ -10,6 +10,7 @@ class InputKind(Enum):
     CONTROL = auto()
     KEY = auto()
     RESIZE = auto()
+    BROWSER = auto()
     NONE = auto()
 
 
@@ -77,6 +78,9 @@ def extract_submission(block_text: str, prompt: str) -> tuple[InputAction | None
                 raise ValueError("Usage: :resize <columns>x<rows> or :rs <columns>x<rows>")
             columns, rows = int(size[0]), int(size[1])
             return InputAction(InputKind.RESIZE, columns=columns, rows=rows), True
+
+        if name in {":browser", ":b"}:
+            return InputAction(InputKind.BROWSER, value), True
 
     return InputAction(InputKind.LINE, command), True
 
