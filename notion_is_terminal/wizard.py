@@ -76,7 +76,7 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
     print(f"✓ Config written: {written}")
     if created.page_url:
         print(f"\nPage: {created.page_url}")
-    print("\nStart the daemon with:\n  notion-terminal run")
+    print("\nStart in background with:\n  notion-terminal daemon start\n\nOr run in foreground with:\n  notion-terminal run")
     print("\nThe generated Notion page contains the input/control reference.")
     return config
 
