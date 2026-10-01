@@ -33,11 +33,32 @@ def test_key_command():
     assert action.value == "UP"
 
 
+def test_short_key_command():
+    action, _ = extract_submission(PROMPT + ":k ENTER\n\n", PROMPT)
+    assert action is not None
+    assert action.kind is InputKind.KEY
+    assert action.value == "ENTER"
+
+
+def test_short_ctrl_command():
+    action, _ = extract_submission(PROMPT + ":c O\n\n", PROMPT)
+    assert action is not None
+    assert action.kind is InputKind.CONTROL
+    assert action.value == "O"
+
+
 def test_raw_escape_decode():
     action, _ = extract_submission(PROMPT + r":send \e:wq\r" + "\n\n", PROMPT)
     assert action is not None
     assert action.kind is InputKind.RAW
     assert action.value == "\x1b:wq\r"
+
+
+def test_short_raw_command():
+    action, _ = extract_submission(PROMPT + r":s \e:q!\r" + "\n\n", PROMPT)
+    assert action is not None
+    assert action.kind is InputKind.RAW
+    assert action.value == "\x1b:q!\r"
 
 
 def test_resize():
@@ -46,6 +67,14 @@ def test_resize():
     assert action.kind is InputKind.RESIZE
     assert action.columns == 100
     assert action.rows == 30
+
+
+def test_short_resize():
+    action, _ = extract_submission(PROMPT + ":rs 120x40\n\n", PROMPT)
+    assert action is not None
+    assert action.kind is InputKind.RESIZE
+    assert action.columns == 120
+    assert action.rows == 40
 
 
 def test_decode_escapes_preserves_unicode():
