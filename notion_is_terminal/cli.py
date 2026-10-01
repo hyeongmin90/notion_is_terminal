@@ -7,7 +7,14 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .background import daemon_status, restart_daemon, show_logs, start_daemon, stop_daemon
+from .background import (
+    InstanceLock,
+    daemon_status,
+    restart_daemon,
+    show_logs,
+    start_daemon,
+    stop_daemon,
+)
 from .config import DEFAULT_CONFIG_PATH, load_config
 from .daemon import TerminalDaemon
 from .notion import NotionClient, NotionError
@@ -68,11 +75,12 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "run":
             config = load_config(args.config)
-            print(f"notion_is_terminal {__version__}")
-            if config.notion.page_url:
-                print(f"Notion: {config.notion.page_url}")
-            print("Starting persistent PTY in foreground. Press Ctrl-C here to stop.")
-            TerminalDaemon(config, config_path=args.config).run()
+            with InstanceLock():
+                print(f"notion_is_terminal {__version__}")
+                if config.notion.page_url:
+                    print(f"Notion: {config.notion.page_url}")
+                print("Starting persistent PTY in foreground. Press Ctrl-C here to stop.")
+                TerminalDaemon(config, config_path=args.config).run()
             return 0
 
         if args.command == "doctor":
