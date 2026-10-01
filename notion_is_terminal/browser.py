@@ -184,10 +184,32 @@ class BrowserController:
         self.start()
         assert self._page is not None
 
-        self._draw_cursor_overlay()
-        png = self._page.screenshot(type="png", full_page=False, scale="css")
-        vision_base64, vision_quality = self._capture_vision_base64()
-        scroll = self._page.evaluate("() => ({x: window.scrollX, y: window.scrollY})")
+        last_error: Exception | None = None
+        for attempt in range(4):
+            try:
+                self._draw_cursor_overlay()
+                png = self._page.screenshot(type="png", full_page=False, scale="css")
+                vision_base64, vision_quality = self._capture_vision_base64()
+                scroll = self._page.evaluate("() => ({x: window.scrollX, y: window.scrollY})")
+                title = self._page.title()
+                url = self._page.url
+                break
+            except Exception as exc:
+                if not _is_navigation_race(exc):
+                    raise BrowserError(f"Could not capture browser observation: {exc}") from exc
+                last_error = exc
+                try:
+                    self._page.wait_for_load_state(
+                        "domcontentloaded",
+                        timeout=min(self.settings.timeout_ms, 3000),
+                    )
+                except Exception:
+                    pass
+                self._page.wait_for_timeout(150 * (attempt + 1))
+        else:
+            raise BrowserError(
+                f"Could not capture browser observation after navigation settled: {last_error}"
+            ) from last_error
 
         self._counter += 1
         stamp = datetime.now(timezone.utc)
@@ -196,8 +218,8 @@ class BrowserController:
         return BrowserObservation(
             observation_id=self._observation_id,
             screenshot=png,
-            url=self._page.url,
-            title=self._page.title(),
+            url=url,
+            title=title,
             width=self.settings.width,
             height=self.settings.height,
             scroll_x=float(scroll.get("x", 0)),
@@ -293,6 +315,15 @@ class BrowserController:
             }""",
             [self._cursor_x, self._cursor_y],
         )
+
+
+def _is_navigation_race(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return (
+        "execution context was destroyed" in message
+        or "cannot find context with specified id" in message
+        or "frame was detached" in message
+    )
 
 
 def parse_browser_command(command: str) -> tuple[str, list[str]]:
