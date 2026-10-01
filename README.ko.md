@@ -4,7 +4,7 @@
 
 **GPT 웹에 로컬 WSL/Linux 셸 서버를 직접 노출하지 않고도 실제 터미널 도구를 연결합니다.**
 
-`notion_is_terminal`은 Notion 페이지를 **GPT 웹 세션과 로컬 Linux PTY 사이의 브리지**로 사용합니다.
+`notion_is_terminal`은 Notion을 **GPT 웹 세션, 로컬 Linux PTY, Playwright 브라우저 사이의 브리지**로 사용합니다.
 
 GPT가 Notion 커넥터를 통해 생성된 페이지를 읽고 수정할 수 있다면 다음과 같은 작업이 가능합니다.
 
@@ -14,10 +14,11 @@ GPT가 Notion 커넥터를 통해 생성된 페이지를 읽고 수정할 수 �
 - Ctrl-C, Ctrl-O, Ctrl-X 같은 Ctrl 조합 입력
 - `nano`, `vim`, `less`, `top`, Codex 같은 TUI 프로그램 조작
 - `cd`, 환경변수, REPL, foreground process 등 셸 상태 유지
+- Playwright로 웹 페이지를 열고 GPT Vision으로 화면을 확인한 뒤 viewport 좌표로 마우스 조작
 
 한 줄로 표현하면:
 
-> **GPT Web ↔ Notion ↔ local PTY ↔ WSL / Linux**
+> **GPT Web ↔ Notion ↔ PTY / Playwright ↔ WSL / Linux / Web**
 
 Notion은 GPT와 로컬 daemon이 공유하는 입출력 화면이고, 실제 터미널 세션은 로컬 daemon이 관리합니다.
 
@@ -95,6 +96,11 @@ ANSI cursor 이동, 화면 지우기, scrolling, redraw sequence를 로컬에서
 - F1-F12
 - raw byte / escape sequence 입력
 - runtime terminal resize
+- persistent Playwright Chromium session
+- Notion Browser Screenshot 자동 갱신
+- 별도 child page의 압축 JPEG Vision payload
+- observation ID 기반 mouse move/click/drag/scroll
+- browser keyboard / navigation 제어
 - background daemon
 - single-instance lock
 - runtime block 자동 복구
@@ -124,7 +130,10 @@ cd notion_is_terminal
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
+playwright install chromium
 ```
+
+두 번째 명령은 browser controller가 사용할 Chromium binary를 설치합니다.
 
 다음 두 명령이 설치됩니다.
 
@@ -246,6 +255,62 @@ Codex 같은 일부 TUI는 붙여넣어진 문자열과 실제 Enter key press�
 를 별도로 보내 실제 Enter key를 전달할 수 있습니다.
 
 같은 방식으로 editor나 다른 interactive program도 조작할 수 있습니다.
+
+---
+
+## Browser + Vision
+
+daemon은 Playwright Chromium 세션도 지속적으로 유지할 수 있습니다. 각 browser action이 끝날 때마다 새로운 observation을 생성합니다.
+
+```text
+Browser Status
+  observation_id
+  url / title
+  viewport / scroll
+  cursor
+  vision_page_url
+
+Browser Screenshot
+  최신 full-resolution viewport 이미지
+
+Browser Vision Payload
+  별도 child page에 저장되는 압축 JPEG payload
+```
+
+Vision용 base64는 메인 Terminal 페이지를 크게 만들지 않도록 별도의 child page에 저장됩니다. GPT는 시각적 판단이 필요할 때만 해당 페이지를 읽습니다.
+
+브라우저 시작:
+
+```text
+> :b goto https://example.com
+```
+
+주요 명령:
+
+| 동작 | 명령 |
+| --- | --- |
+| 이동 | `:b goto <url>` |
+| 새 observation 생성 | `:b shot` |
+| 마우스 이동 | `:b move <observation_id> <x> <y>` |
+| 클릭 | `:b click <observation_id> <x> <y>` |
+| 드래그 | `:b drag <observation_id> <x1> <y1> <x2> <y2>` |
+| 스크롤 | `:b scroll <dx> <dy>` |
+| 문자열 입력 | `:b type <text>` |
+| 키 입력 | `:b key <key>` |
+| 뒤로 가기 | `:b back` |
+| 새로고침 | `:b reload` |
+
+마우스 좌표는 **viewport 기준 CSS pixel**입니다. 기본 viewport는 `1280x720`이고 screenshot도 동일한 CSS-pixel 좌표계로 생성됩니다.
+
+좌표 action에는 반드시 최신 `observation_id`를 사용합니다.
+
+```text
+> :b click obs_20261001T173408Z_0001 640 418
+```
+
+GPT가 이전 screenshot을 기준으로 클릭하려 하면 daemon은 변경된 화면에 잘못된 좌표를 적용하지 않고 `STALE_OBSERVATION`으로 거부합니다.
+
+정상 action 이후에는 이전 screenshot을 제거하고, 새 screenshot과 Vision payload를 갱신한 뒤 새로운 observation ID를 발급합니다.
 
 ---
 
@@ -383,6 +448,11 @@ page_id = "..."
 terminal_block_id = "..."
 input_block_id = "..."
 page_url = "https://..."
+browser_status_block_id = "..."
+browser_image_block_id = "..."
+browser_vision_page_id = "..."
+browser_vision_block_id = "..."
+browser_vision_page_url = "https://..."
 
 [terminal]
 shell = "/bin/bash"
@@ -397,6 +467,17 @@ refresh_interval = 1.5
 health_check_interval = 10.0
 show_cursor = true
 source_bashrc = true
+
+[browser]
+width = 1280
+height = 720
+headless = true
+timeout_ms = 15000
+settle_ms = 350
+show_cursor_overlay = true
+vision_enabled = true
+vision_quality = 35
+vision_max_base64_chars = 160000
 ```
 
 환경변수 `NOTION_TOKEN`이 있으면 config의 token보다 우선합니다.
@@ -439,7 +520,7 @@ Notion은 저지연 터미널 전송 프로토콜이 아닙니다.
 
 현재 지원하지 않거나 Notion에서 자연스럽게 표현되지 않는 기능:
 
-- mouse reporting
+- 터미널 mouse reporting (Playwright browser mouse control은 지원)
 - sixel / kitty graphics
 - pixel graphics
 - terminal color styling
