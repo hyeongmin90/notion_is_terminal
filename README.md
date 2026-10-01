@@ -455,12 +455,15 @@ The daemon does not emulate `cd` itself; the persistent Bash session owns the re
 
 The daemon treats the Notion page ID as the durable anchor and the two runtime block IDs as replaceable references.
 
-Every `health_check_interval` seconds it verifies both configured runtime blocks. If either Terminal or Input was deleted, moved to trash, or is no longer a usable code block:
+Every `health_check_interval` seconds it verifies both configured runtime blocks **and their position**. If either Terminal or Input was deleted, moved to trash, became invalid, or was recreated in the wrong place:
 
 1. the surviving old runtime block is archived when possible;
-2. a fresh Terminal/Input pair is appended to the same Notion page;
-3. the current terminal screen and prompt are restored;
-4. the new block IDs replace the old IDs in `config.toml`.
+2. the original Terminal/Input description blocks are used as stable anchors;
+3. fresh code blocks are inserted back at the original Terminal/Input positions;
+4. the current terminal screen and input prompt are restored;
+5. the new block IDs replace the old IDs in `config.toml`.
+
+If those anchor sections were also deleted or substantially changed, recovery falls back to appending a fresh Terminal/Input section at the end of the page.
 
 A missing/inaccessible **page itself** is not silently recreated. In that case the daemon stops and asks you to run `notion-terminal init` again.
 
