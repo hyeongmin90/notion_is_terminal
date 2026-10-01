@@ -50,6 +50,19 @@ class RuntimeAnchors:
     input_anchor_id: str
 
 
+@dataclass(slots=True)
+class BrowserBlocks:
+    status_block_id: str
+    image_block_id: str = ""
+    recreated: bool = False
+
+
+@dataclass(slots=True)
+class BrowserAnchors:
+    status_anchor_id: str
+    screenshot_anchor_id: str
+
+
 class NotionClient:
     def __init__(self, token: str, *, api_version: str = "2026-03-11", timeout: float = 15.0) -> None:
         self._client = httpx.Client(
@@ -58,7 +71,6 @@ class NotionClient:
             headers={
                 "Authorization": f"Bearer {token}",
                 "Notion-Version": api_version,
-                "Content-Type": "application/json",
                 "User-Agent": "notion-is-terminal/0.1",
             },
         )
@@ -288,6 +300,178 @@ class NotionClient:
             recreated=True,
         )
 
+    def ensure_browser_blocks(
+        self,
+        *,
+        page_id: str,
+        status_block_id: str,
+        image_block_id: str,
+        status_text: str,
+    ) -> BrowserBlocks:
+        self.get_page(page_id)
+        children = self.get_block_children(page_id)
+        anchors = find_browser_anchors(children)
+
+        if anchors is None:
+            return self.append_browser_blocks(page_id=page_id, status_text=status_text)
+
+        status = self._try_get_block(status_block_id) if status_block_id else None
+        status_ok = block_is_usable_code(status) and runtime_block_is_in_place(
+            children,
+            anchor_id=anchors.status_anchor_id,
+            block_id=status_block_id,
+        )
+
+        new_status_id = status_block_id
+        repaired = False
+        if not status_ok:
+            if status is not None and not status.get("archived") and not status.get("in_trash"):
+                try:
+                    self.archive_block(status_block_id)
+                except NotionError:
+                    pass
+            new_status_id = self.restore_runtime_block_at_anchor(
+                page_id=page_id,
+                anchor_id=anchors.status_anchor_id,
+                text=status_text,
+                language="plain text",
+            )
+            repaired = True
+
+        new_image_id = image_block_id
+        if image_block_id:
+            image = self._try_get_block(image_block_id)
+            image_ok = block_is_usable_image(image) and runtime_block_is_in_place(
+                children,
+                anchor_id=anchors.screenshot_anchor_id,
+                block_id=image_block_id,
+            )
+            if not image_ok:
+                if image is not None and not image.get("archived") and not image.get("in_trash"):
+                    try:
+                        self.archive_block(image_block_id)
+                    except NotionError:
+                        pass
+                new_image_id = ""
+                repaired = True
+
+        return BrowserBlocks(
+            status_block_id=new_status_id,
+            image_block_id=new_image_id,
+            recreated=repaired,
+        )
+
+    def append_browser_blocks(self, *, page_id: str, status_text: str) -> BrowserBlocks:
+        response = self._request("PATCH", f"/blocks/{page_id}/children", json={
+            "children": [
+                divider_payload(),
+                heading_payload("Browser"),
+                paragraph_payload(
+                    "Playwright browser status. Coordinates use viewport-relative CSS pixels."
+                ),
+                code_block_payload(status_text, language="plain text"),
+                heading_payload("Browser Screenshot"),
+                paragraph_payload(
+                    "Latest Playwright viewport screenshot for GPT Vision. "
+                    "The image is replaced after each browser action."
+                ),
+            ]
+        })
+        code_blocks = [item for item in response.get("results", []) if item.get("type") == "code"]
+        if not code_blocks:
+            raise NotionError("Notion did not return the Browser Status code block.")
+        return BrowserBlocks(
+            status_block_id=code_blocks[0]["id"],
+            image_block_id="",
+            recreated=True,
+        )
+
+    def replace_browser_image(
+        self,
+        *,
+        page_id: str,
+        old_image_block_id: str,
+        image_bytes: bytes,
+        caption: str,
+    ) -> str:
+        children = self.get_block_children(page_id)
+        anchors = find_browser_anchors(children)
+        if anchors is None:
+            raise NotionError("Browser Screenshot anchor is missing.")
+
+        file_upload_id = self.upload_file(
+            filename="notion-terminal-browser.png",
+            data=image_bytes,
+            content_type="image/png",
+        )
+        response = self._request(
+            "PATCH",
+            f"/blocks/{page_id}/children",
+            json={
+                "children": [image_block_payload(file_upload_id, caption=caption)],
+                "position": {
+                    "type": "after_block",
+                    "after_block": {"id": anchors.screenshot_anchor_id},
+                },
+            },
+        )
+        try:
+            new_image_id = response["results"][0]["id"]
+        except (KeyError, IndexError) as exc:
+            raise NotionError("Notion did not return the Browser Screenshot image block.") from exc
+
+        if old_image_block_id and old_image_block_id != new_image_id:
+            old = self._try_get_block(old_image_block_id)
+            if old is not None and not old.get("archived") and not old.get("in_trash"):
+                try:
+                    self.archive_block(old_image_block_id)
+                except NotionError:
+                    pass
+        return new_image_id
+
+    def upload_file(self, *, filename: str, data: bytes, content_type: str) -> str:
+        upload = self._request(
+            "POST",
+            "/file_uploads",
+            json={
+                "mode": "single_part",
+                "filename": filename,
+                "content_type": content_type,
+            },
+        )
+        upload_id = upload.get("id")
+        upload_url = upload.get("upload_url")
+        if not upload_id or not upload_url:
+            raise NotionError("Notion did not return a file upload ID and upload URL.")
+
+        try:
+            response = self._client.request(
+                "POST",
+                upload_url,
+                files={"file": (filename, data, content_type)},
+            )
+        except httpx.HTTPError as exc:
+            raise NotionError(f"Notion file upload failed: {exc}") from exc
+
+        if response.status_code >= 400:
+            try:
+                error = response.json()
+                message = error.get("message") or response.text
+                code = error.get("code")
+            except ValueError:
+                message = response.text
+                code = None
+            raise NotionError(
+                f"Notion file upload {response.status_code}: {message}",
+                status_code=response.status_code,
+                code=code,
+            )
+
+        payload = response.json()
+        if payload.get("status") not in {None, "uploaded"}:
+            raise NotionError(f"Notion file upload did not complete: {payload.get('status')}")
+        return str(upload_id)
+
     def _try_get_block(self, block_id: str) -> dict[str, Any] | None:
         try:
             return self.get_block(block_id)
@@ -338,6 +522,15 @@ class NotionClient:
         raise NotionError("Notion request failed after retries.")
 
 
+def block_is_usable_image(block: dict[str, Any] | None) -> bool:
+    return bool(
+        block
+        and block.get("type") == "image"
+        and not block.get("archived", False)
+        and not block.get("in_trash", False)
+    )
+
+
 def block_is_usable_code(block: dict[str, Any] | None) -> bool:
     return bool(
         block
@@ -385,6 +578,40 @@ def find_runtime_anchors(children: list[dict[str, Any]]) -> RuntimeAnchors | Non
 
         if terminal_anchor and input_anchor:
             return RuntimeAnchors(terminal_anchor, input_anchor)
+
+    return None
+
+
+def find_browser_anchors(children: list[dict[str, Any]]) -> BrowserAnchors | None:
+    status_anchor: str | None = None
+    screenshot_anchor: str | None = None
+    section: str | None = None
+
+    for block in children:
+        if block.get("archived") or block.get("in_trash"):
+            continue
+
+        if block.get("type") == "heading_2":
+            title = block_plain_text(block).strip()
+            if title == "Browser" and status_anchor is None:
+                section = "status"
+                continue
+            if title == "Browser Screenshot" and screenshot_anchor is None:
+                section = "screenshot"
+                continue
+            if section in {"status", "screenshot"}:
+                section = None
+
+        if block.get("type") == "paragraph":
+            if section == "status" and status_anchor is None:
+                status_anchor = block.get("id")
+                section = None
+            elif section == "screenshot" and screenshot_anchor is None:
+                screenshot_anchor = block.get("id")
+                section = None
+
+        if status_anchor and screenshot_anchor:
+            return BrowserAnchors(status_anchor, screenshot_anchor)
 
     return None
 
@@ -452,6 +679,9 @@ def terminal_page_children(terminal_text: str, input_text: str) -> list[dict[str
         bulleted_payload("Ctrl key — :ctrl KEY or short :c KEY. Example: :c O for Ctrl-O"),
         bulleted_payload(r"Raw bytes/text — :send TEXT or short :s TEXT. Escapes: \e, \x1b, \n, \r, \t, \\"),
         bulleted_payload("Resize — :resize COLSxROWS or short :rs COLSxROWS. Example: :rs 140x50"),
+        bulleted_payload("Browser — :browser ... or short :b ... . Start with :b goto <url> or :b shot."),
+        bulleted_payload("Browser mouse — use the latest observation_id: :b click <obs_id> <x> <y>, :b move <obs_id> <x> <y>."),
+        bulleted_payload("Browser actions auto-publish a fresh screenshot and Browser Status observation."),
         heading_payload("Key names and aliases"),
         bulleted_payload("ENTER aliases: ENTER, RETURN, RET, ENT"),
         bulleted_payload("BACKSPACE aliases: BACKSPACE, BS, BKSP"),
@@ -500,6 +730,18 @@ def code_block_payload(text: str, *, language: str) -> dict[str, Any]:
         "object": "block",
         "type": "code",
         "code": {"caption": [], "rich_text": rich_text_payload(text), "language": language},
+    }
+
+
+def image_block_payload(file_upload_id: str, *, caption: str = "") -> dict[str, Any]:
+    return {
+        "object": "block",
+        "type": "image",
+        "image": {
+            "caption": _simple_rich_text(caption) if caption else [],
+            "type": "file_upload",
+            "file_upload": {"id": file_upload_id},
+        },
     }
 
 
