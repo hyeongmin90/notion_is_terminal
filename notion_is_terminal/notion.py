@@ -763,7 +763,7 @@ def browser_screenshot_image_ids(
 
     image_ids: list[str] = []
     for block in active[index + 1 :]:
-        if block.get("type") == "heading_2":
+        if block.get("type") in {"heading_2", "child_page"}:
             break
         if block.get("type") == "image" and block.get("id"):
             image_ids.append(block["id"])
