@@ -58,24 +58,36 @@ def extract_submission(block_text: str, prompt: str) -> tuple[InputAction | None
     command = payload.strip("\n")
     command_stripped = command.strip()
 
-    if command_stripped.startswith(":ctrl "):
-        return InputAction(InputKind.CONTROL, command_stripped[6:].strip()), True
+    parsed = _split_command(command_stripped)
+    if parsed is not None:
+        name, value = parsed
 
-    if command_stripped.startswith(":key "):
-        return InputAction(InputKind.KEY, command_stripped[5:].strip()), True
+        if name in {":ctrl", ":c"}:
+            return InputAction(InputKind.CONTROL, value), True
 
-    if command_stripped.startswith(":send "):
-        raw = command_stripped[6:]
-        return InputAction(InputKind.RAW, decode_escapes(raw)), True
+        if name in {":key", ":k"}:
+            return InputAction(InputKind.KEY, value), True
 
-    if command_stripped.startswith(":resize "):
-        size = command_stripped[8:].strip().lower().replace("x", " ").split()
-        if len(size) != 2:
-            raise ValueError("Usage: :resize <columns> <rows>")
-        columns, rows = int(size[0]), int(size[1])
-        return InputAction(InputKind.RESIZE, columns=columns, rows=rows), True
+        if name in {":send", ":s"}:
+            return InputAction(InputKind.RAW, decode_escapes(value)), True
+
+        if name in {":resize", ":rs"}:
+            size = value.lower().replace("x", " ").split()
+            if len(size) != 2:
+                raise ValueError("Usage: :resize <columns>x<rows> or :rs <columns>x<rows>")
+            columns, rows = int(size[0]), int(size[1])
+            return InputAction(InputKind.RESIZE, columns=columns, rows=rows), True
 
     return InputAction(InputKind.LINE, command), True
+
+
+def _split_command(value: str) -> tuple[str, str] | None:
+    if not value.startswith(":"):
+        return None
+    parts = value.split(maxsplit=1)
+    if len(parts) != 2:
+        return None
+    return parts[0].lower(), parts[1].strip()
 
 
 def decode_escapes(value: str) -> str:
