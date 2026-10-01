@@ -848,55 +848,101 @@ def runtime_blocks_are_in_place(
 def terminal_page_children(terminal_text: str, input_text: str) -> list[dict[str, Any]]:
     return [
         callout_payload(
-            "This page is a live remote terminal. Anything submitted in Input runs on the local Linux/WSL user running Terminal4GPTWeb.",
+            "Live local terminal and browser control surface. Anything submitted in Input runs with the permissions of the local Linux/WSL user.",
             "⚠️",
         ),
         heading_payload("Terminal"),
         paragraph_payload("Live PTY screen. Do not edit this block manually."),
         code_block_payload(terminal_text, language="plain text"),
         heading_payload("Input"),
-        paragraph_payload(
-            "Input uses a compact > prompt. Normal text is sent after Enter twice. "
-            "For TUI programs, use the key/control commands below when a real key press is required."
-        ),
+        paragraph_payload("Write after > and press Enter twice to submit."),
         code_block_payload(input_text, language="bash"),
         divider_payload(),
-        heading_payload("Controls"),
-        bulleted_payload("Normal input — type text after > and press Enter twice. Example: > pwd"),
-        bulleted_payload("Key press — :key NAME or short :k NAME. Example: :k ENTER"),
-        bulleted_payload("Ctrl key — :ctrl KEY or short :c KEY. Example: :c O for Ctrl-O"),
-        bulleted_payload(r"Raw bytes/text — :send TEXT or short :s TEXT. Escapes: \e, \x1b, \n, \r, \t, \\"),
-        bulleted_payload("Resize — :resize COLSxROWS or short :rs COLSxROWS. Example: :rs 140x50"),
-        bulleted_payload("Browser — :browser ... or short :b ... . Start with :b goto <url> or :b shot."),
-        bulleted_payload("Browser mouse — use the latest observation_id: :b click <obs_id> <x> <y>, :b move <obs_id> <x> <y>."),
-        bulleted_payload("Browser actions auto-publish a fresh screenshot and Browser Status observation."),
-        heading_payload("Key names and aliases"),
-        bulleted_payload("ENTER aliases: ENTER, RETURN, RET, ENT"),
-        bulleted_payload("BACKSPACE aliases: BACKSPACE, BS, BKSP"),
-        bulleted_payload("ESC aliases: ESC, ESCAPE"),
-        bulleted_payload("DELETE / INSERT aliases: DELETE/DEL, INSERT/INS"),
-        bulleted_payload("PAGE keys: PAGEUP/PGUP, PAGEDOWN/PGDN"),
-        bulleted_payload("Navigation: UP, DOWN, LEFT, RIGHT, HOME, END, TAB, F1 ... F12"),
-        heading_payload("Immediate control tokens"),
+        heading_payload("Quick Commands"),
+        bulleted_payload("Shell command — > pwd  (press Enter twice)"),
+        bulleted_payload("Key press — :k ENTER"),
+        bulleted_payload("Ctrl key — :c C"),
+        bulleted_payload("Browser open — :b goto https://example.com"),
+        bulleted_payload("Browser screenshot — :b shot"),
+        bulleted_payload("Browser click — :b click <observation_id> <x> <y>"),
         paragraph_payload(
-            "^C, ^D, ^Z, ^L and ^\\ are recognized immediately without the extra blank-line submit. "
-            "Use ^C to interrupt a running process, ^D for EOF, ^Z to suspend, and ^L to clear/redraw."
-        ),
-        heading_payload("Common TUI recipes"),
-        bulleted_payload("Codex / Claude Code — type text normally; if it appears in the input box but does not submit, use :k ENTER separately."),
-        bulleted_payload("Codex / editors — delete one character with :k BS; move with :k LEFT / :k RIGHT."),
-        bulleted_payload("nano — save: :c O, confirm filename: :k ENTER, exit: :c X, search: :c W."),
-        bulleted_payload(r"vim — raw sequence example to save and quit: :s \e:wq\r"),
-        bulleted_payload("Prompts such as [Y/n] — type y, then Enter twice. If the program needs a literal key event, use :k ENTER."),
-        callout_payload(
-            "Do not enter sudo passwords, API keys, or other secrets in Notion. Use a local authentication step instead.",
-            "🔐",
-        ),
-        paragraph_payload(
-            "If either Terminal or Input code block is deleted or moved to trash, the daemon recreates a fresh matched pair and updates its local config automatically."
+            "Open the Terminal4GPTWeb Help child page for agent instructions, full command reference, examples, and recovery."
         ),
     ]
 
+
+def help_page_children() -> list[dict[str, Any]]:
+    return [
+        callout_payload(
+            "Terminal4GPTWeb connects GPT Web to a persistent local PTY and a Playwright browser through Notion. This page is documentation; use the parent page for live control.",
+            "ℹ️",
+        ),
+        heading_payload("For Humans"),
+        paragraph_payload(
+            "Use the parent Terminal4GPTWeb page. Read Terminal for current shell state and write commands in Input. "
+            "Normal shell input is submitted by pressing Enter twice."
+        ),
+        bulleted_payload("Run in background: t4g daemon start"),
+        bulleted_payload("Check status: t4g daemon status"),
+        bulleted_payload("Restart daemon: t4g daemon restart"),
+        bulleted_payload("Stop daemon: t4g daemon stop"),
+        bulleted_payload("Diagnostics: t4g doctor"),
+        bulleted_payload("Recreate deleted Notion pages: t4g reinit"),
+        heading_payload("For GPT / Agents"),
+        paragraph_payload(
+            "Treat the parent page as a tool surface. Read Terminal before acting. Write exactly one command or control action to Input, "
+            "wait for Input to reset, then read Terminal or Browser Status again before the next action."
+        ),
+        bulleted_payload("Shell: write after > and include a trailing blank line. Example: > pwd"),
+        bulleted_payload("Never assume a browser coordinate from an old screenshot. Use the latest Browser Status observation_id."),
+        bulleted_payload("For visual browser reasoning, fetch vision_page_url, decode data_base64 as image/jpeg, and verify observation_id matches."),
+        bulleted_payload("After each browser action, wait for Browser Status to return to ready or failed before continuing."),
+        heading_payload("Terminal Commands"),
+        bulleted_payload("Normal shell command — > <command>, then Enter twice. Example: > git status"),
+        bulleted_payload("Special key — :key NAME or :k NAME. Example: :k ENTER"),
+        bulleted_payload("Ctrl combination — :ctrl KEY or :c KEY. Example: :c C"),
+        bulleted_payload(r"Raw input — :send TEXT or :s TEXT. Escapes: \e, \x1b, \n, \r, \t, \\"),
+        bulleted_payload("Resize PTY — :resize COLSxROWS or :rs COLSxROWS. Example: :rs 140x50"),
+        heading_payload("Terminal Keys"),
+        paragraph_payload(
+            "Supported names include ENTER/RETURN/RET/ENT, BACKSPACE/BS/BKSP, ESC/ESCAPE, DELETE/DEL, INSERT/INS, "
+            "PAGEUP/PGUP, PAGEDOWN/PGDN, UP, DOWN, LEFT, RIGHT, HOME, END, TAB, and F1 through F12."
+        ),
+        paragraph_payload(
+            "Immediate tokens ^C, ^D, ^Z, ^L and ^\\ are recognized without the extra blank-line submit."
+        ),
+        heading_payload("Browser Commands"),
+        bulleted_payload("Open URL — :b goto <url>"),
+        bulleted_payload("Fresh screenshot — :b shot"),
+        bulleted_payload("Move mouse — :b move <observation_id> <x> <y>"),
+        bulleted_payload("Click — :b click <observation_id> <x> <y>"),
+        bulleted_payload("Drag — :b drag <observation_id> <x1> <y1> <x2> <y2>"),
+        bulleted_payload("Scroll — :b scroll <dx> <dy>"),
+        bulleted_payload("Type text — :b type <text>"),
+        bulleted_payload("Press browser key — :b key <key>"),
+        bulleted_payload("Back — :b back"),
+        bulleted_payload("Reload — :b reload"),
+        paragraph_payload(
+            "Mouse coordinates are viewport-relative CSS pixels. Coordinate actions are rejected with STALE_OBSERVATION when the supplied observation_id is not current."
+        ),
+        heading_payload("Common TUI Examples"),
+        bulleted_payload("Codex / Claude Code — type text normally; if it appears but does not submit, send :k ENTER."),
+        bulleted_payload("nano — save :c O, confirm :k ENTER, exit :c X, search :c W."),
+        bulleted_payload(r"vim — save and quit with :s \e:wq\r"),
+        heading_payload("Recovery"),
+        paragraph_payload(
+            "If only Terminal or Input is deleted, the running daemon repairs the missing runtime block automatically. "
+            "If the entire Terminal4GPTWeb page is deleted, stop the daemon if needed and run t4g reinit. "
+            "The command recreates the main page, Help page, Browser Vision page, and runtime block IDs using the saved local configuration."
+        ),
+        bulleted_payload("Deleted runtime block only — wait for self-healing or run t4g daemon restart."),
+        bulleted_payload("Deleted whole Notion page — run t4g reinit, then t4g daemon restart."),
+        heading_payload("Security"),
+        callout_payload(
+            "This is not a sandbox. Commands execute as the local Linux user. Do not send sudo passwords, API keys, SSH private keys, or other secrets through Notion.",
+            "🔐",
+        ),
+    ]
 
 def rich_text_payload(text: str) -> list[dict[str, Any]]:
     if not text:
