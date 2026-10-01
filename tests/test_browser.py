@@ -30,3 +30,38 @@ def test_stale_observation_is_rejected():
     controller._observation_id = "obs_latest"
     with pytest.raises(BrowserError, match="STALE_OBSERVATION"):
         controller._assert_observation("obs_old")
+
+
+class _FakeScreenshotPage:
+    def __init__(self):
+        self.qualities = []
+
+    def screenshot(self, *, type, quality, full_page, scale):
+        assert type == "jpeg"
+        assert full_page is False
+        assert scale == "css"
+        self.qualities.append(quality)
+        return b"x" * (300 if quality >= 35 else 60)
+
+
+def test_vision_payload_reduces_quality_until_it_fits():
+    controller = BrowserController(
+        BrowserSettings(
+            vision_enabled=True,
+            vision_quality=35,
+            vision_max_base64_chars=100,
+        )
+    )
+    page = _FakeScreenshotPage()
+    controller._page = page
+
+    encoded, quality = controller._capture_vision_base64()
+
+    assert quality == 25
+    assert len(encoded) <= 100
+    assert page.qualities == [35, 25]
+
+
+def test_vision_payload_can_be_disabled():
+    controller = BrowserController(BrowserSettings(vision_enabled=False))
+    assert controller._capture_vision_base64() == ("", 0)
