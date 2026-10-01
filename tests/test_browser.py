@@ -1,6 +1,6 @@
 import pytest
 
-from notion_is_terminal.browser import BrowserController, BrowserError, parse_browser_command
+from notion_is_terminal.browser import BrowserController, BrowserError, _is_navigation_race, parse_browser_command
 from notion_is_terminal.config import BrowserSettings
 
 
@@ -65,3 +65,9 @@ def test_vision_payload_reduces_quality_until_it_fits():
 def test_vision_payload_can_be_disabled():
     controller = BrowserController(BrowserSettings(vision_enabled=False))
     assert controller._capture_vision_base64() == ("", 0)
+
+
+def test_navigation_race_detection():
+    assert _is_navigation_race(RuntimeError("Execution context was destroyed, most likely because of a navigation"))
+    assert _is_navigation_race(RuntimeError("Frame was detached"))
+    assert not _is_navigation_race(RuntimeError("selector timeout"))
