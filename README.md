@@ -1,56 +1,117 @@
 # notion_is_terminal
 
-Use a Notion page as a remote terminal UI for a local WSL/Ubuntu shell.
+[한국어](./README.ko.md)
 
-`notion_is_terminal` keeps a **persistent PTY session** open on the Linux machine, renders the terminal screen into one Notion code block, and uses a second Notion code block as the input/control surface.
+**Give GPT on the web a real terminal surface without exposing a shell server to the internet.**
 
-> The goal is not merely “run a command from Notion.” The goal is to make Notion behave as much like a text terminal/TUI as the Notion API allows.
+`notion_is_terminal` turns a Notion page into a bridge between a web-based GPT session and a persistent Linux PTY.
 
-## Features
+When GPT can read and edit the generated Notion page through a Notion connector, it can:
 
-- Persistent Bash/PTTY session: `cd`, exported variables, REPL state, shell jobs, etc. stay alive.
-- ANSI/VT screen emulation via `pyte`.
-- Two-code-block Notion UI:
-  - **Terminal**: current terminal screen.
-  - **Input**: commands and control input.
-- Live screen refresh through the Notion API.
-- Immediate `^C` interrupt support.
-- `Ctrl-D`, `Ctrl-Z`, `Ctrl-L`, `Ctrl-\\`.
-- Arrow keys, Home/End, Page Up/Down, Insert/Delete, Tab, Escape, Backspace, F1-F12.
-- Raw keystroke input for `vim`, `less`, REPLs, prompts, etc.
-- Runtime terminal resize.
-- Setup wizard that creates the correctly shaped Notion page, writes the controls guide, and saves block IDs.
-- Self-healing runtime blocks: deleted/trashed Terminal or Input blocks are recreated automatically and new IDs are persisted.
-- Built-in detached daemon lifecycle: `start`, `stop`, `restart`, `status`, `logs`.
-- Single-instance lock prevents foreground/background sessions from racing.
-- `doctor` diagnostics.
-- No DB, MQ, server, or sandbox in the MVP.
+- inspect the current terminal screen;
+- send shell commands;
+- press terminal keys such as Enter, arrows, Backspace, Esc, and function keys;
+- send Ctrl combinations such as Ctrl-C, Ctrl-O, and Ctrl-X;
+- interact with TUI programs such as `nano`, `vim`, `less`, `top`, Codex, and other terminal applications;
+- keep shell state such as `cd`, environment variables, REPL sessions, and foreground programs alive between requests.
+
+In short:
+
+> **GPT Web ↔ Notion ↔ local PTY ↔ WSL / Linux**
+
+Notion is the shared control surface. The local daemon owns the real terminal.
+
+> [!CAUTION]
+> This is **not a sandbox**. Anything written to the Input block is executed with the permissions of the Linux user running the daemon. Use a non-root account and do not send passwords, API keys, or other secrets through Notion.
+
+---
+
+## Why this exists
+
+Web-based GPT clients are convenient for reasoning, coding, and remote assistance, but they normally do not have direct access to your local WSL terminal.
+
+This project uses Notion as a lightweight bridge:
+
+1. GPT reads the **Terminal** block.
+2. GPT writes commands or key events to the **Input** block.
+3. `notion-terminal` polls that block and forwards the input to a real PTY.
+4. The PTY output is rendered back into the **Terminal** block.
+5. GPT reads the updated screen and continues.
+
+No public SSH endpoint, custom web server, database, or message queue is required.
+
+---
 
 ## Architecture
 
 ```text
-Notion page
-  ├─ code block #1: Terminal screen
-  └─ code block #2: Input / control
-              ↕
-          Notion API
-              ↕
-      notion-terminal daemon
-              ↕
-      persistent Linux PTY
-              ↕
-        interactive Bash
+┌──────────────────────┐
+│  GPT / ChatGPT Web   │
+│   Notion connector   │
+└──────────┬───────────┘
+           │ read / edit
+           ▼
+┌──────────────────────┐
+│     Notion page      │
+│                      │
+│  Terminal code block │◄─────────────┐
+│  Input code block    │──────────────┐│
+└──────────────────────┘              ││
+                                      ││ Notion API
+                                      ││
+                              ┌───────▼▼────────┐
+                              │ notion-terminal │
+                              │     daemon      │
+                              └───────┬─────────┘
+                                      │
+                                      ▼
+                              ┌───────────────┐
+                              │ persistent PTY│
+                              │ Bash / TUI    │
+                              └───────┬───────┘
+                                      │
+                                      ▼
+                                WSL / Linux
 ```
 
-The Terminal block is a **screen snapshot**, not an append-only stdout log. ANSI cursor movement, clearing, scrolling and redraw commands are interpreted locally before plain text is written back to Notion. This is what makes redraw-oriented programs such as `top`, `less`, and `vim` possible at a text-UI level.
+The Terminal block is a **screen snapshot**, not an append-only stdout log. ANSI cursor movement, clearing, scrolling, and redraw sequences are interpreted locally with `pyte` before the screen is written back to Notion.
+
+That is why redraw-oriented applications can work at a text-UI level.
+
+---
+
+## What it can do
+
+- Persistent interactive Bash session
+- Real PTY semantics: `isatty(stdin/stdout/stderr) == true`
+- ANSI / VT screen emulation
+- Shell state persistence
+- Foreground-process stdin
+- Ctrl-C / Ctrl-D / Ctrl-Z / Ctrl-L / Ctrl-\\
+- Arrow keys, Home/End, Page Up/Down
+- Enter, Backspace, Delete, Insert, Tab, Esc
+- F1-F12
+- Raw byte / escape-sequence input
+- Runtime terminal resize
+- Detached background daemon
+- Single-instance locking
+- Runtime block self-healing
+- `doctor` diagnostics
+
+Tested interaction patterns include Bash, Python REPL, nano, vim-style key sequences, Codex TUI, interactive prompts, and long-running processes interrupted with Ctrl-C.
+
+---
 
 ## Requirements
 
 - WSL2 Ubuntu or another Linux environment
 - Python 3.11+
 - Bash
-- A Notion internal integration with page read/update/insert-content access
-- A parent Notion page shared with that integration
+- A Notion internal integration
+- A Notion page shared with that integration
+- Optional: a GPT / ChatGPT web session with access to the same Notion workspace
+
+---
 
 ## Install
 
@@ -70,9 +131,11 @@ notion-terminal
 nit
 ```
 
-## First-run wizard
+---
 
-Create a Notion internal integration, copy its token, and share one parent page with that integration.
+## Setup
+
+Create a Notion internal integration and give it access to a parent page.
 
 Then run:
 
@@ -80,64 +143,41 @@ Then run:
 notion-terminal init
 ```
 
-The wizard asks for:
+The wizard creates a child page with two runtime blocks:
 
-- Notion integration token
-- parent Notion page URL or ID
-- shell path
-- initial working directory
-- prompt user / host
-- terminal columns / rows
-- polling interval
-- screen refresh interval
+```text
+Terminal
+[ live terminal screen ]
 
-It creates a child page containing built-in usage/help blocks plus **exactly two runtime code blocks** (Terminal + Input) and writes:
+Input
+> 
+```
+
+Configuration is stored at:
 
 ```text
 ~/.config/notion_is_terminal/config.toml
 ```
 
-The config is chmod `0600` on Unix when possible.
+The config is chmod `0600` where supported.
 
-## Run
+---
 
-### Background daemon
+## Run as a background daemon
 
-Recommended for normal use:
+For normal use:
 
 ```bash
 notion-terminal daemon start
 ```
 
-The process is detached from the current shell, so closing the WSL terminal window does not stop it.
-
-Check status:
+Lifecycle commands:
 
 ```bash
 notion-terminal daemon status
-```
-
-Restart after updating config or code:
-
-```bash
 notion-terminal daemon restart
-```
-
-Stop:
-
-```bash
 notion-terminal daemon stop
-```
-
-Read the last 100 log lines:
-
-```bash
 notion-terminal daemon logs
-```
-
-Follow logs:
-
-```bash
 notion-terminal daemon logs -f
 ```
 
@@ -149,65 +189,76 @@ Runtime files:
 ~/.cache/notion_is_terminal/instance.lock
 ```
 
-Only one terminal session can run at a time. A foreground `run` and background daemon cannot both own the same local terminal session.
+The daemon survives closing the WSL terminal window. It does not currently auto-start after WSL itself shuts down or Windows reboots.
 
-The detached daemon survives closing the shell, but it does **not** automatically restart after WSL itself shuts down or Windows reboots. Use a systemd service later if boot-time auto-start is required.
-
-### Foreground mode
-
-Useful for debugging:
+Foreground mode is available for debugging:
 
 ```bash
 notion-terminal run
 ```
 
-Open the generated Notion page.
+---
 
-The Terminal block keeps the real shell prompt, while the Input block stays compact:
+## Using it from GPT Web
+
+Once the generated Notion page is visible to GPT through a Notion connector, the page becomes a terminal tool surface.
+
+A typical flow:
 
 ```text
-> 
+You:
+Check my Notion Terminal and run git status.
+
+GPT:
+1. reads the Terminal block
+2. writes "git status" to Input
+3. waits for the daemon to execute it
+4. reads the refreshed Terminal block
+5. explains the result
 ```
 
-### Sending a normal command
+Because the underlying PTY is persistent, GPT can continue with:
 
-Notion exposes text while a user is still editing it. If the daemon executed on every change, typing `kubectl` could accidentally execute `kub`.
+```bash
+cd ~/project
+git status
+python3
+codex
+nano notes.txt
+```
 
-For that reason, normal input is submitted only when it ends with a **blank line**.
+without creating a new shell for every request.
 
-Type:
+### TUI programs
+
+Some TUI applications distinguish pasted text from an actual Enter key press.
+
+For example, text may appear inside Codex's input field without being submitted. Send Enter separately:
+
+```text
+> :k ENTER
+```
+
+The same control protocol can drive editors and other interactive applications.
+
+---
+
+## Input protocol
+
+Normal text is submitted only after a blank line. In the Notion UI, type the command and press **Enter twice**.
 
 ```text
 > pwd
 
 ```
 
-In practice: type the command and press **Enter twice**.
-
-The daemon sends the line to the PTY and resets the Input block to the fixed `> ` prompt.
-
-## Stop a running command
-
-`^C` is special and is recognized immediately; no blank-line submit is needed.
+After submission, the Input block is reset to:
 
 ```text
-> ^C
+> 
 ```
 
-The daemon writes byte `0x03` into the PTY. The Linux terminal driver therefore delivers `SIGINT` to the foreground process group just as a real local Ctrl-C would.
-
-Other immediate control tokens:
-
-```text
-^D
-^Z
-^L
-^\
-```
-
-## Input control reference
-
-Long and short forms are both supported:
+### Control commands
 
 | Action | Long form | Short form | Example |
 | --- | --- | --- | --- |
@@ -215,18 +266,6 @@ Long and short forms are both supported:
 | Ctrl key | `:ctrl KEY` | `:c KEY` | `:c O` |
 | Raw input | `:send TEXT` | `:s TEXT` | `:s \\e:wq\\r` |
 | Resize | `:resize COLSxROWS` | `:rs COLSxROWS` | `:rs 140x50` |
-
-### Special keys
-
-Supported key names:
-
-```text
-UP DOWN LEFT RIGHT
-HOME END PAGEUP PAGEDOWN
-INSERT DELETE
-TAB ENTER ESC BACKSPACE
-F1 ... F12
-```
 
 Key aliases:
 
@@ -240,86 +279,38 @@ PAGEUP     PGUP
 PAGEDOWN   PGDN
 ```
 
-Examples:
+Other supported keys:
 
 ```text
-> :k ENTER
-> :k BS
-> :k LEFT
-> :k PGUP
+UP DOWN LEFT RIGHT
+HOME END
+TAB
+F1 ... F12
 ```
 
-A key command sends the actual terminal key sequence. This matters for full-screen TUI programs such as Codex, Claude Code, nano, vim, and less.
-
-### Ctrl keys
-
-Use either form:
+Immediate control tokens:
 
 ```text
-> :ctrl O
-> :c O
+^C   interrupt
+^D   EOF
+^Z   suspend
+^L   clear / redraw
+^\   quit signal
 ```
 
-Examples:
+---
 
-```text
-:c C    Ctrl-C
-:c D    Ctrl-D
-:c O    Ctrl-O
-:c X    Ctrl-X
-:c W    Ctrl-W
-```
-
-The common `^C`, `^D`, `^Z`, `^L`, and `^\\` tokens are also recognized immediately without the extra blank-line submit.
-
-### Raw input
-
-For programs that need exact bytes without an automatic Enter:
-
-```text
-> :send ihello
-> :s ihello
-```
-
-Supported escapes:
-
-```text
-\e      Escape
-\x1b    hexadecimal byte
-\n      newline
-\r      carriage return
-\t      tab
-\\      literal backslash
-```
-
-Example while inside Vim:
-
-```text
-> :s \e:wq\r
-```
-
-This sends Escape, `:wq`, and Enter directly to the PTY.
-
-### Resize
-
-```text
-> :resize 140x50
-> :rs 140x50
-```
-
-This updates the PTY window size, terminal emulator size, and sends the normal terminal resize signal.
-
-## Common TUI recipes
+## TUI examples
 
 ### Codex / Claude Code
 
-Normal text can be entered through the Input block. Some TUIs use paste detection, so the text may appear in the TUI input box without being submitted. In that case, send Enter separately:
+Submit text already visible in the TUI:
 
 ```text
 > :k ENTER
 ```
 
-Editing the current TUI input:
+Edit the current input:
 
 ```text
 > :k BS
@@ -329,71 +320,42 @@ Editing the current TUI input:
 
 ### nano
 
-Save:
-
 ```text
-> :c O
-```
-
-Confirm the filename:
-
-```text
-> :k ENTER
-```
-
-Exit:
-
-```text
-> :c X
-```
-
-Search:
-
-```text
-> :c W
+> :c O        # save
+> :k ENTER    # confirm filename
+> :c X        # exit
+> :c W        # search
 ```
 
 ### vim
 
-Save and quit in one raw sequence:
-
 ```text
-> :s \e:wq\r
+> :s \e:wq\r   # save and quit
+> :s \e:q!\r   # quit without saving
 ```
 
-Quit without saving:
+---
 
-```text
-> :s \e:q!\r
-```
+## Runtime block self-healing
 
+The Notion page ID is the durable anchor. Terminal and Input block IDs are replaceable runtime references.
 
-## TUI applications
+Every `health_check_interval` seconds, each runtime block is validated independently.
 
-Because the child shell sees an actual pseudo-terminal and ANSI control sequences are interpreted locally, programs that normally require a TTY can work at a text-UI level:
+If one block is deleted, trashed, invalid, or moved away from its expected position:
 
-```bash
-top
-htop
-less
-vim
-nano
-python
-node
-psql
-ssh
-```
+1. the healthy block is kept unchanged;
+2. only the damaged block is recreated;
+3. it is inserted back at its original section;
+4. only the changed block ID is persisted to `config.toml`.
 
-Notion itself is not a low-latency terminal client. Input and screen frames travel through the Notion API, so interactive programs have visible network/API latency. The project preserves terminal semantics; it does not provide local-terminal responsiveness.
+If both runtime blocks are removed, both are recreated.
 
-Not rendered in the MVP:
+If the stable Terminal/Input anchor sections are also removed, recovery falls back to creating a fresh runtime section at the end of the page.
 
-- mouse reporting
-- sixel/kitty images
-- pixel graphics
-- clipboard escape sequences
-- terminal color styling inside Notion
-- sub-second keystroke streaming
+If the page itself is deleted or inaccessible, the daemon stops instead of silently creating another page.
+
+---
 
 ## Configuration
 
@@ -431,42 +393,7 @@ source_bashrc = true
 
 `NOTION_TOKEN` overrides the token stored in the config.
 
-## Bash startup and current directory
-
-For Bash, the daemon creates:
-
-```text
-~/.cache/notion_is_terminal/bashrc
-```
-
-By default it sources the user's normal `~/.bashrc`, installs the configured prompt, and adds an OSC 7 prompt hook.
-
-That hook reports the real `$PWD` back to the daemon so the **Terminal screen** shows the correct Bash prompt after `cd`.
-
-The Input block intentionally does not mirror the Bash prompt. It remains:
-
-```text
-> 
-```
-
-The daemon does not emulate `cd` itself; the persistent Bash session owns the real shell state.
-
-## Runtime block self-healing
-
-The daemon treats the Notion page ID as the durable anchor and the two runtime block IDs as replaceable references.
-
-Every `health_check_interval` seconds it verifies both configured runtime blocks **and their position**. If either Terminal or Input was deleted, moved to trash, became invalid, or was recreated in the wrong place:
-
-1. the original Terminal/Input description blocks are used as stable anchors;
-2. each runtime block is validated independently;
-3. a healthy block is reused unchanged, including its existing Notion block ID;
-4. only the deleted, invalid, or misplaced block is recreated at its original position;
-5. the current terminal screen or input prompt is restored for the repaired side;
-6. only changed block IDs are replaced in `config.toml`.
-
-If those anchor sections were also deleted or substantially changed, recovery falls back to appending a fresh Terminal/Input section at the end of the page.
-
-A missing/inaccessible **page itself** is not silently recreated. In that case the daemon stops and asks you to run `notion-terminal init` again.
+---
 
 ## Diagnostics
 
@@ -474,37 +401,42 @@ A missing/inaccessible **page itself** is not silently recreated. In that case t
 notion-terminal doctor
 ```
 
-Checks:
+Checks config, Linux / WSL environment, shell path, working directory, Notion page access, and both runtime blocks.
 
-- config
-- Linux/WSL environment
-- shell path
-- working directory
-- Notion page access
-- Terminal code block
-- Input code block
+---
 
-## Security
+## Security model
 
-**The MVP intentionally has no sandbox or command allowlist.**
+This project deliberately does **not** implement a command allowlist or sandbox.
 
-Anything entered through the Notion Input block executes with the permissions of the Linux user running the daemon. Treat write access to the Notion page and possession of the integration token as security-sensitive.
+The security boundary is the Linux account running the daemon. A GPT session that can write to the Notion Input block can execute commands with that user's permissions.
 
-Run it as a non-root user.
+Recommended precautions:
 
-## Why PTY instead of stdout pipes?
+- run the daemon as a dedicated non-root user;
+- never send sudo passwords through Notion;
+- never send API keys, SSH private keys, or other secrets through the Input block;
+- restrict access to the generated Notion page;
+- use a separate local authentication path for privileged work.
 
-With `subprocess.PIPE`, programs can detect that stdin/stdout are not terminals and often disable interactivity, line buffering, progress rendering, cursor movement, and full-screen TUI modes.
+---
 
-A PTY gives the child process terminal semantics:
+## Limitations
 
-```text
-isatty(stdin)  == true
-isatty(stdout) == true
-isatty(stderr) == true
-```
+Notion is not a low-latency terminal transport. Terminal semantics are preserved, but every interaction still passes through the Notion API.
 
-That is the basis for using Notion as a TUI surface rather than only as a remote command runner.
+Currently not supported as a native Notion terminal experience:
+
+- mouse reporting
+- sixel / kitty graphics
+- pixel graphics
+- terminal color styling
+- clipboard escape sequences
+- sub-second keystroke streaming
+- multiple simultaneous PTY sessions
+- automatic startup after WSL / Windows restart
+
+---
 
 ## Development
 
@@ -516,26 +448,7 @@ python -m compileall -q notion_is_terminal tests
 
 GitHub Actions tests Python 3.11, 3.12, and 3.13.
 
-## MVP scope
-
-Included:
-
-- one Notion page
-- exactly two code blocks
-- one persistent PTY session
-- Bash on Linux/WSL
-- TUI screen rendering
-- terminal control input
-
-Intentionally deferred:
-
-- sandboxing
-- DB / MQ
-- multiple sessions
-- multi-user locking
-- webhook-based input
-- automatic restart after WSL/Windows restart
-- service/systemd installer
+---
 
 ## License
 
