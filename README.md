@@ -105,10 +105,10 @@ notion-terminal run
 
 Open the generated Notion page.
 
-The Input block looks like:
+The Terminal block keeps the real shell prompt, while the Input block stays compact:
 
 ```text
-user@ubuntu:/home/user$ 
+> 
 ```
 
 ### Sending a normal command
@@ -120,20 +120,20 @@ For that reason, normal input is submitted only when it ends with a **blank line
 Type:
 
 ```text
-user@ubuntu:/home/user$ pwd
+> pwd
 
 ```
 
 In practice: type the command and press **Enter twice**.
 
-The daemon sends the line to the PTY and resets the Input block to the current prompt.
+The daemon sends the line to the PTY and resets the Input block to the fixed `> ` prompt.
 
 ## Stop a running command
 
 `^C` is special and is recognized immediately; no blank-line submit is needed.
 
 ```text
-user@ubuntu:/home/user$ ^C
+> ^C
 ```
 
 The daemon writes byte `0x03` into the PTY. The Linux terminal driver therefore delivers `SIGINT` to the foreground process group just as a real local Ctrl-C would.
@@ -152,7 +152,7 @@ Other immediate control tokens:
 Submit special keys through the Input block:
 
 ```text
-user@ubuntu:/home/user$ :key UP
+> :key UP
 
 ```
 
@@ -173,7 +173,7 @@ Aliases include `PGUP`, `PGDN`, `DEL`, `INS`, and `RETURN`.
 For programs that need input without an automatic Enter:
 
 ```text
-user@ubuntu:/home/user$ :send ihello
+> :send ihello
 
 ```
 
@@ -200,7 +200,7 @@ This sends Escape, `:wq`, and Enter to the PTY.
 ## Resize
 
 ```text
-user@ubuntu:/home/user$ :resize 140x50
+> :resize 140x50
 
 ```
 
@@ -257,6 +257,7 @@ shell = "/bin/bash"
 cwd = "/home/user"
 user = "user"
 host = "ubuntu"
+input_prompt = "> "
 columns = 120
 rows = 40
 poll_interval = 1.2
@@ -278,16 +279,12 @@ For Bash, the daemon creates:
 
 By default it sources the user's normal `~/.bashrc`, installs the configured prompt, and adds an OSC 7 prompt hook.
 
-That hook reports the real `$PWD` back to the daemon, so:
+That hook reports the real `$PWD` back to the daemon so the **Terminal screen** shows the correct Bash prompt after `cd`.
 
-```bash
-cd ~/project
-```
-
-causes the Notion Input prompt to become:
+The Input block intentionally does not mirror the Bash prompt. It remains:
 
 ```text
-user@ubuntu:/home/user/project$ 
+> 
 ```
 
 The daemon does not emulate `cd` itself; the persistent Bash session owns the real shell state.
