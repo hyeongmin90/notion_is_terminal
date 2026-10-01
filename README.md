@@ -19,7 +19,8 @@ Use a Notion page as a remote terminal UI for a local WSL/Ubuntu shell.
 - Arrow keys, Home/End, Page Up/Down, Insert/Delete, Tab, Escape, Backspace, F1-F12.
 - Raw keystroke input for `vim`, `less`, REPLs, prompts, etc.
 - Runtime terminal resize.
-- Setup wizard that creates the correctly shaped Notion page and saves block IDs.
+- Setup wizard that creates the correctly shaped Notion page, writes the controls guide, and saves block IDs.
+- Self-healing runtime blocks: deleted/trashed Terminal or Input blocks are recreated automatically and new IDs are persisted.
 - `doctor` diagnostics.
 - No DB, MQ, server, or sandbox in the MVP.
 
@@ -88,7 +89,7 @@ The wizard asks for:
 - polling interval
 - screen refresh interval
 
-It creates a child page containing **exactly two code blocks** and writes:
+It creates a child page containing built-in usage/help blocks plus **exactly two runtime code blocks** (Terminal + Input) and writes:
 
 ```text
 ~/.config/notion_is_terminal/config.toml
@@ -260,6 +261,7 @@ columns = 120
 rows = 40
 poll_interval = 1.2
 refresh_interval = 1.5
+health_check_interval = 10.0
 show_cursor = true
 source_bashrc = true
 ```
@@ -289,6 +291,19 @@ user@ubuntu:/home/user/project$
 ```
 
 The daemon does not emulate `cd` itself; the persistent Bash session owns the real shell state.
+
+## Runtime block self-healing
+
+The daemon treats the Notion page ID as the durable anchor and the two runtime block IDs as replaceable references.
+
+Every `health_check_interval` seconds it verifies both configured runtime blocks. If either Terminal or Input was deleted, moved to trash, or is no longer a usable code block:
+
+1. the surviving old runtime block is archived when possible;
+2. a fresh Terminal/Input pair is appended to the same Notion page;
+3. the current terminal screen and prompt are restored;
+4. the new block IDs replace the old IDs in `config.toml`.
+
+A missing/inaccessible **page itself** is not silently recreated. In that case the daemon stops and asks you to run `notion-terminal init` again.
 
 ## Diagnostics
 
