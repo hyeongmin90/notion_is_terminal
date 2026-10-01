@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tomllib
 from dataclasses import dataclass
@@ -83,22 +84,21 @@ def write_config(config: AppConfig, path: Path | str = DEFAULT_CONFIG_PATH) -> P
     config_path = Path(path).expanduser()
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
-    text = "
-".join(
+    text = "\n".join(
         [
             "[notion]",
-            f'token = {_toml_string(config.notion.token)}',
-            f'api_version = {_toml_string(config.notion.api_version)}',
-            f'page_id = {_toml_string(config.notion.page_id)}',
-            f'terminal_block_id = {_toml_string(config.notion.terminal_block_id)}',
-            f'input_block_id = {_toml_string(config.notion.input_block_id)}',
-            f'page_url = {_toml_string(config.notion.page_url)}',
+            f"token = {_toml_string(config.notion.token)}",
+            f"api_version = {_toml_string(config.notion.api_version)}",
+            f"page_id = {_toml_string(config.notion.page_id)}",
+            f"terminal_block_id = {_toml_string(config.notion.terminal_block_id)}",
+            f"input_block_id = {_toml_string(config.notion.input_block_id)}",
+            f"page_url = {_toml_string(config.notion.page_url)}",
             "",
             "[terminal]",
-            f'shell = {_toml_string(config.terminal.shell)}',
-            f'cwd = {_toml_string(config.terminal.cwd)}',
-            f'user = {_toml_string(config.terminal.user)}',
-            f'host = {_toml_string(config.terminal.host)}',
+            f"shell = {_toml_string(config.terminal.shell)}",
+            f"cwd = {_toml_string(config.terminal.cwd)}",
+            f"user = {_toml_string(config.terminal.user)}",
+            f"host = {_toml_string(config.terminal.host)}",
             f"columns = {config.terminal.columns}",
             f"rows = {config.terminal.rows}",
             f"poll_interval = {config.terminal.poll_interval}",
@@ -139,6 +139,4 @@ def _validate_terminal(settings: TerminalSettings) -> None:
 
 
 def _toml_string(value: str) -> str:
-    escaped = value.replace("\", "\\").replace('"', '\"').replace("
-", "\n")
-    return f'"{escaped}"'
+    return json.dumps(value, ensure_ascii=False)
