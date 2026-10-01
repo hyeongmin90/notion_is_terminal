@@ -2,9 +2,11 @@ from notion_is_terminal.notion import (
     MAX_RICH_TEXT_CHUNK,
     NotionClient,
     NotionError,
+    BrowserAnchors,
     RuntimeAnchors,
     RuntimeBlocks,
     block_is_usable_code,
+    find_browser_anchors,
     find_runtime_anchors,
     parse_page_id,
     rich_text_payload,
@@ -175,3 +177,14 @@ def test_missing_input_reuses_existing_terminal_block():
     assert blocks.recreated is True
     assert blocks.terminal_block_id == "terminal-old"
     assert blocks.input_block_id == "input-new"
+
+
+def test_find_browser_anchors():
+    children = [
+        {"id": "h-browser", "type": "heading_2", "heading_2": {"rich_text": _rich("Browser")}},
+        {"id": "a-browser", "type": "paragraph", "paragraph": {"rich_text": _rich("status")}},
+        {"id": "status", "type": "code", "code": {"rich_text": []}},
+        {"id": "h-shot", "type": "heading_2", "heading_2": {"rich_text": _rich("Browser Screenshot")}},
+        {"id": "a-shot", "type": "paragraph", "paragraph": {"rich_text": _rich("latest image")}},
+    ]
+    assert find_browser_anchors(children) == BrowserAnchors("a-browser", "a-shot")
