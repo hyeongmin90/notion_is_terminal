@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import re
-import time
+import base64
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -25,6 +24,8 @@ class BrowserObservation:
     cursor_x: float | None
     cursor_y: float | None
     created_at: str
+    vision_base64: str = ""
+    vision_quality: int = 0
 
 
 class BrowserController:
@@ -185,6 +186,7 @@ class BrowserController:
 
         self._draw_cursor_overlay()
         png = self._page.screenshot(type="png", full_page=False, scale="css")
+        vision_base64, vision_quality = self._capture_vision_base64()
         scroll = self._page.evaluate("() => ({x: window.scrollX, y: window.scrollY})")
 
         self._counter += 1
@@ -203,6 +205,35 @@ class BrowserController:
             cursor_x=self._cursor_x,
             cursor_y=self._cursor_y,
             created_at=stamp.isoformat(),
+            vision_base64=vision_base64,
+            vision_quality=vision_quality,
+        )
+
+    def _capture_vision_base64(self) -> tuple[str, int]:
+        if not self.settings.vision_enabled:
+            return "", 0
+        assert self._page is not None
+
+        qualities: list[int] = []
+        for quality in (self.settings.vision_quality, 25, 15, 8):
+            quality = max(1, min(100, quality))
+            if quality not in qualities:
+                qualities.append(quality)
+
+        for quality in qualities:
+            jpeg = self._page.screenshot(
+                type="jpeg",
+                quality=quality,
+                full_page=False,
+                scale="css",
+            )
+            encoded = base64.b64encode(jpeg).decode("ascii")
+            if len(encoded) <= self.settings.vision_max_base64_chars:
+                return encoded, quality
+
+        raise BrowserError(
+            "Vision screenshot is too large for the Notion payload. "
+            "Reduce browser viewport size or vision_max_base64_chars requirements."
         )
 
     def _assert_observation(self, observation_id: str) -> None:
