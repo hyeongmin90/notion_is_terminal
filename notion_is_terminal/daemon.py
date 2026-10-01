@@ -435,6 +435,6 @@ def sanitize_terminal_for_notion(text: str) -> str:
     """Prevent terminal output from becoming Markdown fences in connector serialization."""
     def split_run(match: re.Match[str]) -> str:
         run = match.group(0)
-        return "\u200b".join(run[i : i + 2] for i in range(0, len(run), 2))
+        return "\u00a0".join(run[i : i + 2] for i in range(0, len(run), 2))
 
     return _BACKTICK_RUN.sub(split_run, text)
