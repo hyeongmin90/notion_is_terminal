@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import selectors
+import signal
 import time
 from pathlib import Path
 
@@ -25,12 +26,18 @@ class TerminalDaemon:
         self._last_input_written = ""
         self._last_terminal_written = ""
         self._dirty = True
+        self._stop_requested = False
 
     @property
     def input_prompt(self) -> str:
         return self.config.terminal.input_prompt
 
+    def request_stop(self) -> None:
+        self._stop_requested = True
+
     def run(self) -> None:
+        previous_sigterm = signal.getsignal(signal.SIGTERM)
+        signal.signal(signal.SIGTERM, lambda _signum, _frame: self.request_stop())
         try:
             self.session.start()
             self.selector.register(self.session.fileno(), selectors.EVENT_READ)
@@ -44,7 +51,7 @@ class TerminalDaemon:
             next_render = now
             next_health = now + self.config.terminal.health_check_interval
 
-            while self.session.is_alive():
+            while self.session.is_alive() and not self._stop_requested:
                 now = time.monotonic()
                 next_due = min(next_poll, next_render, next_health)
                 timeout = max(0.0, next_due - now)
@@ -65,18 +72,35 @@ class TerminalDaemon:
                     self._health_check()
                     next_health = now + self.config.terminal.health_check_interval
 
-            self.session.read_ready()
-            self._dirty = True
-            self._write_terminal(force=True, suffix="\n\n[notion_is_terminal: shell session ended]")
-            try:
-                self.notion.update_code_block(
-                    self.config.notion.input_block_id,
-                    "[SESSION ENDED] Restart `notion-terminal run` locally.",
-                    language="plain text",
-                )
-            except NotionError:
-                pass
+            if self.session.is_alive():
+                self.session.send_control("C")
+                time.sleep(0.05)
+                self.session.close()
+            else:
+                self.session.read_ready()
+
+            if self._stop_requested:
+                try:
+                    self.notion.update_code_block(
+                        self.config.notion.input_block_id,
+                        "[DAEMON STOPPED] Start with: notion-terminal daemon start",
+                        language="plain text",
+                    )
+                except NotionError:
+                    pass
+            else:
+                self._dirty = True
+                self._write_terminal(force=True, suffix="\n\n[notion_is_terminal: shell session ended]")
+                try:
+                    self.notion.update_code_block(
+                        self.config.notion.input_block_id,
+                        "[SESSION ENDED] Restart with: notion-terminal run",
+                        language="plain text",
+                    )
+                except NotionError:
+                    pass
         finally:
+            signal.signal(signal.SIGTERM, previous_sigterm)
             try:
                 self.selector.close()
             finally:
