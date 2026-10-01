@@ -233,5 +233,5 @@ class TerminalDaemon:
         self._last_input_written = input_text
         self._dirty = False
 
-        print("[notion] runtime blocks were missing or invalid.")
-        print("[notion] created a fresh Terminal/Input pair and updated config.toml.")
+        print("[notion] one or more runtime blocks were missing, invalid, or misplaced.")
+        print("[notion] repaired only the affected runtime block(s) and updated config.toml.")
