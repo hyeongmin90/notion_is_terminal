@@ -26,6 +26,7 @@ class TerminalSettings:
     cwd: str = str(Path.home())
     user: str = os.environ.get("USER", "user")
     host: str = "ubuntu"
+    input_prompt: str = "> "
     columns: int = 120
     rows: int = 40
     poll_interval: float = 1.2
@@ -67,6 +68,7 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         cwd=terminal_raw.get("cwd", str(Path.home())),
         user=terminal_raw.get("user", os.environ.get("USER", "user")),
         host=terminal_raw.get("host", "ubuntu"),
+        input_prompt=str(terminal_raw.get("input_prompt", "> ")),
         columns=int(terminal_raw.get("columns", 120)),
         rows=int(terminal_raw.get("rows", 40)),
         poll_interval=float(terminal_raw.get("poll_interval", 1.2)),
@@ -99,6 +101,7 @@ def write_config(config: AppConfig, path: Path | str = DEFAULT_CONFIG_PATH) -> P
             f"cwd = {_toml_string(config.terminal.cwd)}",
             f"user = {_toml_string(config.terminal.user)}",
             f"host = {_toml_string(config.terminal.host)}",
+            f"input_prompt = {_toml_string(config.terminal.input_prompt)}",
             f"columns = {config.terminal.columns}",
             f"rows = {config.terminal.rows}",
             f"poll_interval = {config.terminal.poll_interval}",
@@ -126,6 +129,10 @@ def _required(raw: dict, key: str) -> str:
 
 
 def _validate_terminal(settings: TerminalSettings) -> None:
+    if not settings.input_prompt:
+        raise ValueError("terminal.input_prompt must not be empty")
+    if "\n" in settings.input_prompt or "\r" in settings.input_prompt:
+        raise ValueError("terminal.input_prompt must be a single line")
     if settings.columns < 20 or settings.columns > 400:
         raise ValueError("terminal.columns must be between 20 and 400")
     if settings.rows < 5 or settings.rows > 200:
