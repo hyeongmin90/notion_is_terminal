@@ -81,3 +81,7 @@ cwd = "/tmp"
     assert loaded.browser.width == 1280
     assert loaded.browser.height == 720
     assert loaded.browser.headless is True
+    assert loaded.browser.vision_enabled is True
+    assert loaded.browser.vision_quality == 35
+    assert loaded.notion.browser_vision_page_id == ""
+    assert loaded.notion.browser_vision_block_id == ""
