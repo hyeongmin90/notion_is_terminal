@@ -17,6 +17,9 @@ class NotionSettings:
     terminal_block_id: str
     input_block_id: str
     page_url: str = ""
+    parent_page_id: str = ""
+    help_page_id: str = ""
+    help_page_url: str = ""
     api_version: str = "2026-03-11"
     browser_status_block_id: str = ""
     browser_image_block_id: str = ""
@@ -80,6 +83,9 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         terminal_block_id=_required(notion_raw, "terminal_block_id"),
         input_block_id=_required(notion_raw, "input_block_id"),
         page_url=notion_raw.get("page_url", ""),
+        parent_page_id=str(notion_raw.get("parent_page_id", "")),
+        help_page_id=str(notion_raw.get("help_page_id", "")),
+        help_page_url=str(notion_raw.get("help_page_url", "")),
         api_version=notion_raw.get("api_version", "2026-03-11"),
         browser_status_block_id=str(notion_raw.get("browser_status_block_id", "")),
         browser_image_block_id=str(notion_raw.get("browser_image_block_id", "")),
@@ -133,6 +139,9 @@ def write_config(config: AppConfig, path: Path | str = DEFAULT_CONFIG_PATH) -> P
             f"terminal_block_id = {_toml_string(config.notion.terminal_block_id)}",
             f"input_block_id = {_toml_string(config.notion.input_block_id)}",
             f"page_url = {_toml_string(config.notion.page_url)}",
+            f"parent_page_id = {_toml_string(config.notion.parent_page_id)}",
+            f"help_page_id = {_toml_string(config.notion.help_page_id)}",
+            f"help_page_url = {_toml_string(config.notion.help_page_url)}",
             f"browser_status_block_id = {_toml_string(config.notion.browser_status_block_id)}",
             f"browser_image_block_id = {_toml_string(config.notion.browser_image_block_id)}",
             f"browser_vision_page_id = {_toml_string(config.notion.browser_vision_page_id)}",
