@@ -127,7 +127,7 @@ Tested interaction patterns include Bash, Python REPL, nano, vim-style key seque
 - **GPT / ChatGPT Web with the Notion connection enabled** for remote GPT control
 - Optional but recommended for development: **GitHub connection** in ChatGPT
 - Optional for recurring operations: ChatGPT scheduled tasks / automations, where available
-- Only for sandbox mode: Node.js 22.12+, [`@anthropic-ai/sandbox-runtime`](https://github.com/anthropic-experimental/sandbox-runtime) (`srt`), `bubblewrap`, `socat`, `ripgrep`, and `script` (util-linux)
+- Only for sandbox mode: Node.js 22.12+, [`@anthropic-ai/sandbox-runtime`](https://github.com/anthropic-experimental/sandbox-runtime) **0.0.78** (`srt`, currently tested version), `bubblewrap`, `socat`, `ripgrep`, and `script` (util-linux)
 
 > [!IMPORTANT]
 > Terminal4GPTWeb does not expose a standalone GPT API. GPT Web reaches the local runtime by reading and editing the generated Notion pages, so the Notion connection is required for the GPT-Web workflow.
@@ -183,7 +183,7 @@ Only if you plan to enable the PTY sandbox (Ubuntu/WSL2, Node.js 22.12+):
 
 ```bash
 sudo apt install -y bubblewrap socat ripgrep util-linux
-npm install -g @anthropic-ai/sandbox-runtime
+npm install -g @anthropic-ai/sandbox-runtime@0.0.78
 srt --version
 ```
 
@@ -715,7 +715,7 @@ srt applies three layers:
 ```bash
 # 1. install (Node.js 22.12+)
 sudo apt install -y bubblewrap socat ripgrep util-linux
-npm install -g @anthropic-ai/sandbox-runtime
+npm install -g @anthropic-ai/sandbox-runtime@0.0.78
 
 # 2. enable: answer "y" to "Enable sandbox" in `t4g init`,
 #    or set `enabled = true` under [sandbox] in config.toml
@@ -796,7 +796,7 @@ $ curl -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/user
 
 - Network allowlist changes and filesystem changes both need `t4g daemon restart`.
 - Masking only protects configured files and variables; it is not a secret scanner.
-- srt is experimental (`@anthropic-ai/sandbox-runtime` 0.0.x); pinning a version such as `npm install -g @anthropic-ai/sandbox-runtime@0.0.78` is recommended.
+- srt is experimental (`@anthropic-ai/sandbox-runtime` 0.0.x); pinning a version such as `npm install -g @anthropic-ai/sandbox-runtime@0.0.78@0.0.78` is recommended.
 
 ### Upgrading from the earlier bubblewrap sandbox
 
