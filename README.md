@@ -513,57 +513,182 @@ The same control protocol can drive editors and other interactive applications.
 
 ## Browser + Vision
 
-The daemon can also keep a persistent Playwright Chromium session. Every browser action produces a new observation:
+The daemon keeps one **persistent Playwright Chromium context and page**. The browser starts lazily on the first `:b ...` command and stays alive until the daemon stops or restarts, so cookies, login state, local/session storage, navigation history, focus, and page state can survive across browser actions.
+
+Every successful browser action is followed by `settle_ms` (default: 350 ms) and then a fresh observation.
 
 ```text
 Browser Status
+  status
   observation_id
   url / title
   viewport / scroll
   cursor
+  vision
   vision_page_url
+  created_at
 
 Browser Screenshot
-  latest full-resolution viewport image
+  latest viewport PNG
 
 Browser Vision Payload
-  compressed JPEG payload on a separate child page
+  observation_id + compressed viewport JPEG as base64
+  stored on a separate child page
 ```
 
-The child page keeps the machine-readable Vision payload out of the main terminal page. GPT can fetch it only when visual reasoning is required.
+The normal status lifecycle is:
 
-Start a browser session:
+```text
+idle → running → ready
+               ↘ failed
+```
+
+- `idle`: Chromium has not been used yet.
+- `running`: the daemon accepted a browser command and is executing it.
+- `ready`: the command completed and a **new** observation was published.
+- `failed`: the command failed; read the `error` field before issuing another action.
+
+### Browser commands
+
+| Action | Command | Notes |
+| --- | --- | --- |
+| Navigate | `:b goto <url>` | `:b open <url>` is an alias. Waits for `domcontentloaded`. |
+| Fresh observation | `:b shot` | No interaction; recaptures current viewport/state. |
+| Move mouse / hover | `:b move <observation_id> <x> <y>` | Requires the latest observation ID. |
+| Click | `:b click <observation_id> <x> <y>` | Requires the latest observation ID. |
+| Drag | `:b drag <observation_id> <x1> <y1> <x2> <y2>` | Moves through intermediate steps, then releases at the destination. |
+| Scroll | `:b scroll <dx> <dy>` | Mouse-wheel delta; positive `dy` scrolls down, negative scrolls up. |
+| Insert text | `:b type <text>` | Inserts literal text into the currently focused element; does **not** press Enter. |
+| Press browser key | `:b key <key>` | Passed to Playwright `keyboard.press()`, e.g. `Enter`, `Tab`, `Escape`, `ArrowDown`, `Control+A`, `Shift+Tab`. |
+| Back | `:b back` | Browser history back; waits for `domcontentloaded`. |
+| Reload | `:b reload` | Reloads current page; waits for `domcontentloaded`. |
+
+Start with:
 
 ```text
 > :b goto https://example.com
 ```
 
-Useful commands:
+### Observation-safe control loop
 
-| Action | Command |
-| --- | --- |
-| Navigate | `:b goto <url>` |
-| Capture a fresh observation | `:b shot` |
-| Move mouse | `:b move <observation_id> <x> <y>` |
-| Click | `:b click <observation_id> <x> <y>` |
-| Drag | `:b drag <observation_id> <x1> <y1> <x2> <y2>` |
-| Scroll | `:b scroll <dx> <dy>` |
-| Type text | `:b type <text>` |
-| Press key | `:b key <key>` |
-| Back | `:b back` |
-| Reload | `:b reload` |
+For reliable GPT/browser control, treat each screenshot as an immutable snapshot:
 
-Mouse coordinates use **viewport-relative CSS pixels**. The default viewport is `1280x720`, and screenshots are captured in the same CSS-pixel coordinate system.
+```text
+1. Read Browser Status and require status: ready
+2. Record observation_id, viewport, scroll and URL
+3. Inspect Browser Screenshot or Vision Payload for that same observation_id
+4. Choose exactly one action
+5. Submit the action through Input
+6. Wait for Input to reset and Browser Status to become ready
+7. Discard the old observation_id and repeat from step 1
+```
 
-Coordinate actions require the latest `observation_id`:
+Coordinate actions (`move`, `click`, `drag`) intentionally require the current `observation_id`.
 
 ```text
 > :b click obs_20261001T173408Z_0001 640 418
 ```
 
-If GPT tries to click using an older screenshot, the daemon rejects it with `STALE_OBSERVATION` instead of applying stale coordinates to a changed page.
+If the page changed and that ID is no longer current, the daemon returns:
 
-After each successful action, the daemon automatically replaces the previous screenshot, updates the Vision payload, and issues a new observation ID.
+```text
+STALE_OBSERVATION
+```
+
+instead of applying old coordinates to a new page. Never retry the same coordinate with a guessed ID; read the new Browser Status and screenshot first.
+
+`scroll`, `type`, `key`, navigation and reload do not take an observation ID, but every successful one still creates a new observation. Wait for it before continuing.
+
+### Coordinates, viewport and scrolling
+
+Mouse coordinates are **viewport-relative CSS pixels**, not document coordinates. With the default `1280x720` viewport:
+
+```text
+top-left     = 0,0
+bottom-right = 1280,720
+```
+
+Coordinates outside the configured viewport are rejected. The screenshot is also viewport-only, so off-screen content must be reached by scrolling first.
+
+Example:
+
+```text
+> :b scroll 0 600
+# wait for ready, inspect the new screenshot and new observation_id
+> :b click <new_observation_id> 920 640
+```
+
+`Browser Status.scroll` contains the page's current `window.scrollX,window.scrollY`. It is metadata only; click coordinates remain relative to the visible viewport.
+
+### Focus, typing and keyboard control
+
+`:b type` sends text to whatever element currently has keyboard focus. A typical form workflow is therefore:
+
+```text
+# inspect current observation
+> :b click <obs_id> 420 310
+# wait for the new observation
+> :b type user@example.com
+# wait again
+> :b key Tab
+# wait again
+> :b type secret
+> :b key Enter
+```
+
+Do not combine the click coordinates from one observation with the screenshot from another. For hover-driven UIs, use `:b move`, wait for the new screenshot, then click using the **new** observation ID.
+
+When `show_cursor_overlay = true`, the most recent mouse position is rendered as a small marker in subsequent screenshots. This is useful for checking where the last move/click/drag ended.
+
+### Screenshot vs Vision Payload
+
+The two browser images represent the same viewport but serve different purposes:
+
+- **Browser Screenshot**: full-resolution PNG shown directly on the control page for humans.
+- **Browser Vision Payload**: compressed JPEG encoded as base64 on the Vision child page for GPT image reasoning.
+- The Vision payload contains its own `observation_id`. Verify it matches Browser Status before using it for coordinates.
+
+If a SPA or asynchronously rendered page changes after the normal settle delay, use:
+
+```text
+> :b shot
+```
+
+to capture the current state without interacting.
+
+### Failure handling
+
+If Browser Status becomes `failed`:
+
+1. read `command` and `error`;
+2. do not keep issuing coordinates against the old screenshot;
+3. if the page state is uncertain, run `:b shot`;
+4. continue only after a fresh `status: ready` observation exists.
+
+Common cases:
+
+- `STALE_OBSERVATION` → reread Browser Status/Screenshot and use the new ID.
+- `Coordinate (...) is outside viewport` → scroll or choose a point inside the configured viewport.
+- Playwright/Chromium missing → run `playwright install chromium`.
+- Vision payload too large → reduce `browser.width` / `browser.height` or adjust `vision_max_base64_chars`.
+- A local server started **inside the srt sandbox** is not reachable by this Playwright browser because the browser runs outside the sandbox network namespace.
+
+### Browser settings
+
+```toml
+[browser]
+width = 1280
+height = 720
+headless = true
+timeout_ms = 15000
+settle_ms = 350
+show_cursor_overlay = true
+vision_enabled = true
+vision_quality = 35
+vision_max_base64_chars = 160000
+```
+
+`timeout_ms` is Playwright's default action/navigation timeout. `settle_ms` is the delay between a successful action and the observation capture.
 
 ---
 
