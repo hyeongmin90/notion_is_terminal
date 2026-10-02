@@ -166,6 +166,7 @@ input_prompt = "> "
 
     loaded = load_config(path)
     assert loaded.terminal.input_prompt == ""
+    assert loaded.terminal.rows == 60
 
 
 def test_old_config_gets_browser_defaults(tmp_path: Path):
