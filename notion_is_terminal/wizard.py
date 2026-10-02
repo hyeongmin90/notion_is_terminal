@@ -93,9 +93,13 @@ def _choose_parent_page(notion: NotionClient) -> str:
     print("  1. Search pages")
     print("  2. Enter URL / page ID")
 
-    choice = _prompt("Select", "1").strip()
-    if choice == "2":
-        return _enter_parent_page()
+    while True:
+        choice = _prompt("Select", "1").strip()
+        if choice == "1":
+            break
+        if choice == "2":
+            return _enter_parent_page()
+        print("Invalid selection. Choose 1 or 2.")
 
     while True:
         query = input("\nSearch page title (blank = recent pages): ").strip()
