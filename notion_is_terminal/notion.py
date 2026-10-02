@@ -974,19 +974,43 @@ def help_page_children() -> list[dict[str, Any]]:
             "Immediate tokens ^C, ^D, ^Z, ^L and ^\\ are recognized without the extra blank-line submit."
         ),
         heading_payload("Browser Commands"),
-        bulleted_payload("Open URL — :b goto <url>"),
-        bulleted_payload("Fresh screenshot — :b shot"),
-        bulleted_payload("Move mouse — :b move <observation_id> <x> <y>"),
+        bulleted_payload("Open URL — :b goto <url> (alias: :b open <url>)"),
+        bulleted_payload("Fresh observation — :b shot"),
+        bulleted_payload("Move / hover — :b move <observation_id> <x> <y>"),
         bulleted_payload("Click — :b click <observation_id> <x> <y>"),
         bulleted_payload("Drag — :b drag <observation_id> <x1> <y1> <x2> <y2>"),
-        bulleted_payload("Scroll — :b scroll <dx> <dy>"),
-        bulleted_payload("Type text — :b type <text>"),
-        bulleted_payload("Press browser key — :b key <key>"),
+        bulleted_payload("Scroll — :b scroll <dx> <dy> (positive dy scrolls down)"),
+        bulleted_payload("Type literal text into the focused element — :b type <text>"),
+        bulleted_payload("Press browser key — :b key <key>, e.g. Enter, Tab, Escape, ArrowDown, Control+A"),
         bulleted_payload("Back — :b back"),
         bulleted_payload("Reload — :b reload"),
+        heading_payload("Browser Control Loop"),
         paragraph_payload(
-            "Mouse coordinates are viewport-relative CSS pixels. Coordinate actions are rejected with STALE_OBSERVATION when the supplied observation_id is not current."
+            "Every successful browser action publishes a new observation after the configured settle delay. "
+            "Treat each screenshot as immutable: read Browser Status, require status ready, note observation_id, "
+            "inspect the matching screenshot or Vision payload, issue exactly one action, then wait for the next ready observation."
         ),
+        bulleted_payload("Coordinate actions move/click/drag require the latest observation_id and reject stale IDs with STALE_OBSERVATION."),
+        bulleted_payload("Scroll/type/key/navigation do not take an observation_id, but they still create a new observation; wait for it before the next action."),
+        bulleted_payload("Mouse coordinates are viewport-relative CSS pixels. Browser Status scroll is page metadata; click coordinates remain relative to the visible viewport."),
+        bulleted_payload("Screenshots are viewport-only. Scroll first to reach off-screen content, then use the new observation for coordinates."),
+        bulleted_payload("For hover UI, send :b move, inspect the newly rendered hover state, then click using the new observation_id."),
+        heading_payload("Browser Focus and Keys"),
+        paragraph_payload(
+            ":b type inserts literal text into the currently focused element and does not press Enter. "
+            "A reliable form flow is click field → wait for ready → type → wait → key Tab/Enter → wait."
+        ),
+        bulleted_payload("Playwright key examples — Enter, Tab, Escape, ArrowUp/ArrowDown, Shift+Tab, Control+A."),
+        bulleted_payload("With show_cursor_overlay enabled, the last mouse position appears as a marker in subsequent screenshots."),
+        heading_payload("Browser Failure Recovery"),
+        paragraph_payload(
+            "Browser Status transitions idle → running → ready, or running → failed. On failed, read command/error and do not keep using old coordinates. "
+            "If page state is uncertain, run :b shot and continue only from the new ready observation."
+        ),
+        bulleted_payload("STALE_OBSERVATION — reread Browser Status/Screenshot and use the new observation_id."),
+        bulleted_payload("Coordinate outside viewport — scroll or choose a point inside the configured viewport."),
+        bulleted_payload("Late SPA/async render — run :b shot to recapture current state without interacting."),
+        bulleted_payload("Vision payload observation_id must match Browser Status before using it for coordinate reasoning."),
         heading_payload("Common TUI Examples"),
         bulleted_payload("Codex / Claude Code — type text normally; if it appears but does not submit, send :k ENTER."),
         bulleted_payload("nano — save :c O, confirm :k ENTER, exit :c X, search :c W."),
