@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
-DEFAULT_CONFIG_PATH = Path.home() / ".config" / "notion_is_terminal" / "config.toml"
+DEFAULT_CONFIG_PATH = Path.home() / ".config" / "t4g" / "config.toml"
 
 
 @dataclass(slots=True)

@@ -926,7 +926,7 @@ Commands that accept a config path use:
 Default:
 
 ```text
-~/.config/notion_is_terminal/config.toml
+~/.config/t4g/config.toml
 ```
 
 ---

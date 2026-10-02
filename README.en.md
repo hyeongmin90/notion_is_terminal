@@ -234,7 +234,7 @@ Parent Page
 Local config is stored at:
 
 ```text
-~/.config/notion_is_terminal/config.toml
+~/.config/t4g/config.toml
 ```
 
 ### 5. Validate and start
@@ -707,7 +707,7 @@ $ curl -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/user
 Default:
 
 ```text
-~/.config/notion_is_terminal/config.toml
+~/.config/t4g/config.toml
 ```
 
 Example:
