@@ -68,7 +68,7 @@ sudo apt install -y bubblewrap
 bwrap --version
 ```
 
-Bubblewrap is not required when `sandbox.enabled = false`.
+Bubblewrap is not required when `read_only = false, workspace = false, masking = false`.
 
 ## 3. Create a Notion parent page
 
@@ -206,10 +206,10 @@ Feature switches:
 
 ```toml
 [sandbox]
-enabled = true
-workspace_enabled = true
-workspace = "/home/user/project"
-masking_enabled = true
+read_only = false
+workspace = true
+workspace_path = "/home/user/project"
+masking = true
 
 deny_read = []
 deny_write = [".git"]
@@ -217,11 +217,11 @@ deny_write = [".git"]
 
 Semantics:
 
-- `enabled = false`: all PTY sandboxing is disabled; other sandbox settings remain stored but inactive
-- `enabled = true, workspace_enabled = false`: read-only host mode
-- `enabled = true, workspace_enabled = true`: workspace isolation
-- `masking_enabled = false`: credential rules remain in config but are not applied
-- `masking_enabled = true`: apply configured credential masking/deny rules
+- `read_only = false`, `workspace = false`, `masking = false`: all PTY sandboxing is disabled; other sandbox settings remain stored but inactive
+- `enabled = true, workspace = false`: read-only host mode
+- `enabled = true, workspace = true`: workspace isolation
+- `masking = false`: credential rules remain in config but are not applied
+- `masking = true`: apply configured credential masking/deny rules
 
 Structured credential masking:
 
