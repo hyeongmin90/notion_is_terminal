@@ -740,7 +740,13 @@ deny_write = [".git"]
 [[sandbox.credentials.files]]
 path = ".env"
 mode = "mask"
-extract = '(?m)^(?:OPENAI_API_KEY|DATABASE_URL|JWT_SECRET)=(\\S+)height = 720
+extract = '(?m)^(?:OPENAI_API_KEY|DATABASE_URL|JWT_SECRET)=(\\S+)$'
+on_extract_no_match = "deny"
+mask_duplicates = false
+
+[browser]
+width = 1280
+height = 720
 headless = true
 timeout_ms = 15000
 settle_ms = 350
@@ -758,9 +764,12 @@ vision_max_base64_chars = 160000
 
 | 설정 | 동작 |
 | --- | --- |
-| `read_only = false, workspace = false, masking = false` | 기존 unrestricted PTY. 다른 sandbox 설정은 적용되지 않음 |
+| 설정 | 동작 |
+| --- | --- |
+| `read_only = false`, `workspace = false` | masking/deny 정책도 없다면 unrestricted PTY |
 | `read_only = true`, `workspace = false` | host filesystem read-only + sandbox 전용 writable `/tmp` |
-| `read_only = false`, `workspace = true` | 지정 workspace만 RW로 `/workspace`에 노출 |
+| `read_only = false`, `workspace = true` | `workspace_path`만 writable `/workspace`로 노출 |
+| `read_only = true`, `workspace = true` | `workspace_path`만 노출하되 `/workspace` 자체도 read-only |
 | `masking = false` | credential 규칙을 config에 남겨두되 적용하지 않음 |
 | `masking = true` | credential file mask/deny 규칙 적용 |
 
