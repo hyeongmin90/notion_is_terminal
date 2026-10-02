@@ -200,7 +200,7 @@ Credential masking rules are configured after initialization in `config.toml`.
 Default path:
 
 ```text
-~/.config/notion_is_terminal/config.toml
+~/.config/t4g/config.toml
 ```
 
 Sandbox settings:
