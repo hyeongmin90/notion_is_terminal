@@ -1,6 +1,6 @@
 # Terminal4GPTWeb 설치 및 최초 설정
 
-[English](./INSTALL.md) · [메인 README](./README.ko.md)
+[English](./INSTALL.md) · [메인 README](./README.ko.md) · [제어 명령 전체 레퍼런스](./CONTROL_COMMANDS.ko.md)
 
 이 문서는 Terminal4GPTWeb을 처음 설치하는 사용자를 위한 전체 절차입니다.
 
