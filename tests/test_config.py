@@ -32,7 +32,7 @@ def test_config_round_trip(tmp_path: Path):
             cwd="/tmp",
             user="user",
             host="ubuntu",
-            input_prompt="> ",
+            input_prompt="",
             columns=100,
             rows=30,
             poll_interval=1.0,
@@ -77,7 +77,7 @@ def test_config_round_trip(tmp_path: Path):
     assert loaded.notion.parent_page_id == "parent"
     assert loaded.notion.help_page_id == "help"
     assert loaded.notion.help_page_url == "https://notion.so/help"
-    assert loaded.terminal.input_prompt == "> "
+    assert loaded.terminal.input_prompt == ""
     assert loaded.terminal.columns == 100
     assert loaded.terminal.rows == 30
     assert loaded.terminal.health_check_interval == 12.0
@@ -116,7 +116,7 @@ def test_config_round_trip(tmp_path: Path):
     assert loaded.browser.height == 720
 
 
-def test_old_config_defaults_to_compact_input_prompt(tmp_path: Path):
+def test_old_config_defaults_to_promptless_input_and_more_rows(tmp_path: Path):
     path = tmp_path / "config.toml"
     path.write_text(
         """
@@ -134,7 +134,8 @@ cwd = "/tmp"
     )
 
     loaded = load_config(path)
-    assert loaded.terminal.input_prompt == "> "
+    assert loaded.terminal.input_prompt == ""
+    assert loaded.terminal.rows == 60
     assert loaded.terminal.sandbox.enabled is False
     assert loaded.terminal.sandbox.read_only is False
     assert loaded.terminal.sandbox.workspace is False
@@ -145,6 +146,26 @@ cwd = "/tmp"
     assert loaded.terminal.sandbox.deny_write == []
     assert loaded.terminal.sandbox.credential_files == []
     assert loaded.terminal.sandbox.credential_env == []
+
+
+def test_legacy_default_input_prompt_is_migrated(tmp_path: Path):
+    path = tmp_path / "config.toml"
+    path.write_text(
+        """
+[notion]
+token = "secret_test"
+page_id = "page"
+terminal_block_id = "terminal"
+input_block_id = "input"
+
+[terminal]
+input_prompt = "> "
+""".strip(),
+        encoding="utf-8",
+    )
+
+    loaded = load_config(path)
+    assert loaded.terminal.input_prompt == ""
 
 
 def test_old_config_gets_browser_defaults(tmp_path: Path):

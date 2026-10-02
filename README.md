@@ -260,16 +260,16 @@ https://help.openai.com/en/articles/12532955-notion-app-and-setup-in-chatgpt
 In the generated Notion Input block:
 
 ```text
-> pwd
+pwd
 
 ```
 
-Submit with a trailing blank line (Enter twice in the Notion UI). Terminal should update and Input should reset to `>`.
+Press Enter once to submit. Terminal should update and Input should reset to an empty block.
 
 Browser:
 
 ```text
-> :b goto https://example.com
+:b goto https://example.com
 ```
 
 Browser Status and Browser Screenshot should update.
@@ -525,15 +525,15 @@ observe current Terminal / Browser Status
 A few examples:
 
 ```text
-> git status
+git status
 
-> :k ENTER
+:k ENTER
 
-> :c C
+:c C
 
-> :b goto https://example.com
+:b goto https://example.com
 
-> :b shot
+:b shot
 
 ```
 
@@ -736,9 +736,9 @@ shell = "/bin/bash"
 cwd = "/home/user"
 user = "user"
 host = "ubuntu"
-input_prompt = "> "
+input_prompt = ""
 columns = 120
-rows = 40
+rows = 60
 poll_interval = 1.2
 refresh_interval = 1.5
 health_check_interval = 10.0

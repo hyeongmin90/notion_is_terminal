@@ -95,9 +95,9 @@ class TerminalSettings:
     cwd: str = str(Path.home())
     user: str = os.environ.get("USER", "user")
     host: str = "ubuntu"
-    input_prompt: str = "> "
+    input_prompt: str = ""
     columns: int = 120
-    rows: int = 40
+    rows: int = 60
     poll_interval: float = 1.2
     refresh_interval: float = 1.5
     health_check_interval: float = 10.0
@@ -159,14 +159,19 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
 
     sandbox = _load_sandbox(sandbox_raw)
 
+    input_prompt = str(terminal_raw.get("input_prompt", ""))
+    if input_prompt == "> ":
+        # Migrate the old default prompt to the promptless Input UI.
+        input_prompt = ""
+
     terminal = TerminalSettings(
         shell=terminal_raw.get("shell", "/bin/bash"),
         cwd=terminal_raw.get("cwd", str(Path.home())),
         user=terminal_raw.get("user", os.environ.get("USER", "user")),
         host=terminal_raw.get("host", "ubuntu"),
-        input_prompt=str(terminal_raw.get("input_prompt", "> ")),
+        input_prompt=input_prompt,
         columns=int(terminal_raw.get("columns", 120)),
-        rows=int(terminal_raw.get("rows", 40)),
+        rows=int(terminal_raw.get("rows", 60)),
         poll_interval=float(terminal_raw.get("poll_interval", 1.2)),
         refresh_interval=float(terminal_raw.get("refresh_interval", 1.5)),
         health_check_interval=float(terminal_raw.get("health_check_interval", 10.0)),
@@ -301,8 +306,6 @@ def _required(raw: dict, key: str) -> str:
 
 
 def _validate_terminal(settings: TerminalSettings) -> None:
-    if not settings.input_prompt:
-        raise ValueError("terminal.input_prompt must not be empty")
     if "\n" in settings.input_prompt or "\r" in settings.input_prompt:
         raise ValueError("terminal.input_prompt must be a single line")
     if settings.columns < 20 or settings.columns > 400:
