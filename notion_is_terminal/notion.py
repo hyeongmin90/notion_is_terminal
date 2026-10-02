@@ -1001,13 +1001,13 @@ def help_page_children() -> list[dict[str, Any]]:
         bulleted_payload("Deleted whole Notion page — run t4g reinit, then t4g daemon restart."),
         heading_payload("Security"),
         paragraph_payload(
-            "PTY sandboxing is optional and controlled by local config. sandbox.enabled=false runs commands with the full permissions of the daemon user. "
-            "When enabled, read-only or workspace isolation can be combined with deny_read/deny_write and credential file masking."
+            "PTY security features are explicit, composable config switches: read_only, workspace, and masking."
         ),
-        bulleted_payload("Sandbox OFF — sandbox.enabled = false"),
-        bulleted_payload("Read-only host view — sandbox.enabled = true, workspace_enabled = false"),
-        bulleted_payload("Workspace isolation — sandbox.enabled = true, workspace_enabled = true"),
-        bulleted_payload("Credential masking — masking_enabled = true plus sandbox.credentials.files entries"),
+        bulleted_payload("Unrestricted PTY — read_only = false, workspace = false, masking = false"),
+        bulleted_payload("Read-only host view — read_only = true, workspace = false"),
+        bulleted_payload("Workspace RW isolation — read_only = false, workspace = true, plus workspace_path"),
+        bulleted_payload("Workspace RO isolation — read_only = true, workspace = true, plus workspace_path"),
+        bulleted_payload("Credential masking — masking = true plus sandbox.credentials.files entries"),
         callout_payload(
             "Even with sandboxing, do not send sudo passwords, API keys, SSH private keys, or other secrets through Notion Input. Credential masking protects configured files; it is not a universal secret scanner.",
             "🔐",
