@@ -1000,8 +1000,16 @@ def help_page_children() -> list[dict[str, Any]]:
         bulleted_payload("Deleted runtime block only — wait for self-healing or run t4g daemon restart."),
         bulleted_payload("Deleted whole Notion page — run t4g reinit, then t4g daemon restart."),
         heading_payload("Security"),
+        paragraph_payload(
+            "PTY sandboxing is optional and controlled by local config. sandbox.enabled=false runs commands with the full permissions of the daemon user. "
+            "When enabled, read-only or workspace isolation can be combined with deny_read/deny_write and credential file masking."
+        ),
+        bulleted_payload("Sandbox OFF — sandbox.enabled = false"),
+        bulleted_payload("Read-only host view — sandbox.enabled = true, workspace_enabled = false"),
+        bulleted_payload("Workspace isolation — sandbox.enabled = true, workspace_enabled = true"),
+        bulleted_payload("Credential masking — masking_enabled = true plus sandbox.credentials.files entries"),
         callout_payload(
-            "This is not a sandbox. Commands execute as the local Linux user. Do not send sudo passwords, API keys, SSH private keys, or other secrets through Notion.",
+            "Even with sandboxing, do not send sudo passwords, API keys, SSH private keys, or other secrets through Notion Input. Credential masking protects configured files; it is not a universal secret scanner.",
             "🔐",
         ),
     ]
