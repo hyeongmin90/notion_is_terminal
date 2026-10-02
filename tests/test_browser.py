@@ -1,7 +1,7 @@
 import pytest
 
-from notion_is_terminal.browser import BrowserController, BrowserError, _is_navigation_race, parse_browser_command
-from notion_is_terminal.config import BrowserSettings
+from app.browser import BrowserController, BrowserError, _is_navigation_race, parse_browser_command
+from app.config import BrowserSettings
 
 
 def test_parse_browser_command():
