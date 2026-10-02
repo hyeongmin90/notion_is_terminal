@@ -1,4 +1,4 @@
-from notion_is_terminal.protocol import InputKind, decode_escapes, extract_submission
+from app.protocol import InputKind, decode_escapes, extract_submission
 
 
 PROMPT = "> "
