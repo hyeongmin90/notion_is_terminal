@@ -4,14 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from app import sandbox as sandbox_module
-from app.config import (
+from terminal4gptweb import sandbox as sandbox_module
+from terminal4gptweb.config import (
     CredentialEnvSettings,
     CredentialFileSettings,
     SandboxSettings,
     TerminalSettings,
 )
-from app.sandbox import (
+from terminal4gptweb.sandbox import (
     SandboxUnavailableError,
     build_shell_launch,
     build_srt_settings,
