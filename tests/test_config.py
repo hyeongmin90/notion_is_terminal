@@ -49,9 +49,6 @@ def test_config_round_trip(tmp_path: Path):
     assert loaded.notion.help_page_id == "help"
     assert loaded.notion.help_page_url == "https://notion.so/help"
     assert loaded.terminal.input_prompt == "> "
-    assert loaded.terminal.sandbox.mode == "none"
-    assert loaded.terminal.sandbox.deny_read == []
-    assert loaded.terminal.sandbox.deny_write == []
     assert loaded.terminal.columns == 100
     assert loaded.terminal.rows == 30
     assert loaded.terminal.health_check_interval == 12.0
@@ -82,6 +79,10 @@ cwd = "/tmp"
 
     loaded = load_config(path)
     assert loaded.terminal.input_prompt == "> "
+    assert loaded.terminal.sandbox.mode == "none"
+    assert loaded.terminal.sandbox.workspace == ""
+    assert loaded.terminal.sandbox.deny_read == []
+    assert loaded.terminal.sandbox.deny_write == []
 
 
 def test_old_config_gets_browser_defaults(tmp_path: Path):
