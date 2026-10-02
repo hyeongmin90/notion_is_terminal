@@ -529,6 +529,8 @@ A few examples:
 
 ```
 
+Control commands such as `:k ENTER` are **separate Input actions**, not inline syntax appended to ordinary text. For example, send text to Codex first, then submit `:k ENTER` alone in the next Input action if a real Enter key is needed.
+
 The underlying PTY is persistent, so cwd, environment, REPLs and TUI state continue across actions.
 
 ### Browser + Vision overview
