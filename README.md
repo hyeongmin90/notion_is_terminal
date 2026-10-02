@@ -497,297 +497,60 @@ nano notes.txt
 
 without creating a new shell for every request.
 
-### TUI programs
+## Control commands
 
-Some TUI applications distinguish pasted text from an actual Enter key press.
+The complete control protocol is documented separately:
 
-For example, text may appear inside Codex's input field without being submitted. Send Enter separately:
+- **[Control Command Reference](./CONTROL_COMMANDS.md)** — every Input command, PTY key/alias, Ctrl input, raw escape, resize rule, Playwright browser command, observation rule and local `t4g` CLI command.
+- [한국어 제어 명령 전체 레퍼런스](./CONTROL_COMMANDS.ko.md)
+
+The main control pattern is intentionally simple:
 
 ```text
-> :k ENTER
+observe current Terminal / Browser Status
+→ write one action to Input
+→ wait for Input to reset
+→ observe the new state
+→ continue
 ```
 
-The same control protocol can drive editors and other interactive applications.
+A few examples:
 
----
+```text
+> git status
 
-## Browser + Vision
+> :k ENTER
 
-The daemon keeps one **persistent Playwright Chromium context and page**. The browser starts lazily on the first `:b ...` command and stays alive until the daemon stops or restarts, so cookies, login state, local/session storage, navigation history, focus, and page state can survive across browser actions.
+> :c C
 
-Every successful browser action is followed by `settle_ms` (default: 350 ms) and then a fresh observation.
+> :b goto https://example.com
+
+> :b shot
+
+```
+
+The underlying PTY is persistent, so cwd, environment, REPLs and TUI state continue across actions.
+
+### Browser + Vision overview
+
+The daemon also keeps one persistent Playwright Chromium context/page. Browser state such as cookies, login state, local/session storage, focus and history can survive across browser actions.
+
+Each successful browser action publishes a fresh observation:
 
 ```text
 Browser Status
-  status
-  observation_id
-  url / title
-  viewport / scroll
-  cursor
-  vision
+  status / observation_id / url / title
+  viewport / scroll / cursor
   vision_page_url
-  created_at
 
 Browser Screenshot
   latest viewport PNG
 
 Browser Vision Payload
-  observation_id + compressed viewport JPEG as base64
-  stored on a separate child page
+  compressed JPEG + matching observation_id
 ```
 
-The normal status lifecycle is:
-
-```text
-idle → running → ready
-               ↘ failed
-```
-
-- `idle`: Chromium has not been used yet.
-- `running`: the daemon accepted a browser command and is executing it.
-- `ready`: the command completed and a **new** observation was published.
-- `failed`: the command failed; read the `error` field before issuing another action.
-
-### Browser commands
-
-| Action | Command | Notes |
-| --- | --- | --- |
-| Navigate | `:b goto <url>` | `:b open <url>` is an alias. Waits for `domcontentloaded`. |
-| Fresh observation | `:b shot` | No interaction; recaptures current viewport/state. |
-| Move mouse / hover | `:b move <observation_id> <x> <y>` | Requires the latest observation ID. |
-| Click | `:b click <observation_id> <x> <y>` | Requires the latest observation ID. |
-| Drag | `:b drag <observation_id> <x1> <y1> <x2> <y2>` | Moves through intermediate steps, then releases at the destination. |
-| Scroll | `:b scroll <dx> <dy>` | Mouse-wheel delta; positive `dy` scrolls down, negative scrolls up. |
-| Insert text | `:b type <text>` | Inserts literal text into the currently focused element; does **not** press Enter. |
-| Press browser key | `:b key <key>` | Passed to Playwright `keyboard.press()`, e.g. `Enter`, `Tab`, `Escape`, `ArrowDown`, `Control+A`, `Shift+Tab`. |
-| Back | `:b back` | Browser history back; waits for `domcontentloaded`. |
-| Reload | `:b reload` | Reloads current page; waits for `domcontentloaded`. |
-
-Start with:
-
-```text
-> :b goto https://example.com
-```
-
-### Observation-safe control loop
-
-For reliable GPT/browser control, treat each screenshot as an immutable snapshot:
-
-```text
-1. Read Browser Status and require status: ready
-2. Record observation_id, viewport, scroll and URL
-3. Inspect Browser Screenshot or Vision Payload for that same observation_id
-4. Choose exactly one action
-5. Submit the action through Input
-6. Wait for Input to reset and Browser Status to become ready
-7. Discard the old observation_id and repeat from step 1
-```
-
-Coordinate actions (`move`, `click`, `drag`) intentionally require the current `observation_id`.
-
-```text
-> :b click obs_20261001T173408Z_0001 640 418
-```
-
-If the page changed and that ID is no longer current, the daemon returns:
-
-```text
-STALE_OBSERVATION
-```
-
-instead of applying old coordinates to a new page. Never retry the same coordinate with a guessed ID; read the new Browser Status and screenshot first.
-
-`scroll`, `type`, `key`, navigation and reload do not take an observation ID, but every successful one still creates a new observation. Wait for it before continuing.
-
-### Coordinates, viewport and scrolling
-
-Mouse coordinates are **viewport-relative CSS pixels**, not document coordinates. With the default `1280x720` viewport:
-
-```text
-top-left     = 0,0
-bottom-right = 1280,720
-```
-
-Coordinates outside the configured viewport are rejected. The screenshot is also viewport-only, so off-screen content must be reached by scrolling first.
-
-Example:
-
-```text
-> :b scroll 0 600
-# wait for ready, inspect the new screenshot and new observation_id
-> :b click <new_observation_id> 920 640
-```
-
-`Browser Status.scroll` contains the page's current `window.scrollX,window.scrollY`. It is metadata only; click coordinates remain relative to the visible viewport.
-
-### Focus, typing and keyboard control
-
-`:b type` sends text to whatever element currently has keyboard focus. A typical form workflow is therefore:
-
-```text
-# inspect current observation
-> :b click <obs_id> 420 310
-# wait for the new observation
-> :b type user@example.com
-# wait again
-> :b key Tab
-# wait again
-> :b type secret
-> :b key Enter
-```
-
-Do not combine the click coordinates from one observation with the screenshot from another. For hover-driven UIs, use `:b move`, wait for the new screenshot, then click using the **new** observation ID.
-
-When `show_cursor_overlay = true`, the most recent mouse position is rendered as a small marker in subsequent screenshots. This is useful for checking where the last move/click/drag ended.
-
-### Screenshot vs Vision Payload
-
-The two browser images represent the same viewport but serve different purposes:
-
-- **Browser Screenshot**: full-resolution PNG shown directly on the control page for humans.
-- **Browser Vision Payload**: compressed JPEG encoded as base64 on the Vision child page for GPT image reasoning.
-- The Vision payload contains its own `observation_id`. Verify it matches Browser Status before using it for coordinates.
-
-If a SPA or asynchronously rendered page changes after the normal settle delay, use:
-
-```text
-> :b shot
-```
-
-to capture the current state without interacting.
-
-### Failure handling
-
-If Browser Status becomes `failed`:
-
-1. read `command` and `error`;
-2. do not keep issuing coordinates against the old screenshot;
-3. if the page state is uncertain, run `:b shot`;
-4. continue only after a fresh `status: ready` observation exists.
-
-Common cases:
-
-- `STALE_OBSERVATION` → reread Browser Status/Screenshot and use the new ID.
-- `Coordinate (...) is outside viewport` → scroll or choose a point inside the configured viewport.
-- Playwright/Chromium missing → run `playwright install chromium`.
-- Vision payload too large → reduce `browser.width` / `browser.height` or adjust `vision_max_base64_chars`.
-- A local server started **inside the srt sandbox** is not reachable by this Playwright browser because the browser runs outside the sandbox network namespace.
-
-### Current browser-control scope
-
-The current Notion command surface controls **one persistent page** through viewport mouse/keyboard actions. It does not currently expose CSS-selector/DOM-query commands, automatic popup/new-tab switching, file chooser/upload commands, or download management. If a site opens a separate tab/window, that new page is not automatically adopted as the controlled page.
-
-The Playwright browser is independent of the PTY process. In particular, enabling the SRT PTY sandbox does not place Playwright inside that sandbox.
-
-### Browser settings
-
-```toml
-[browser]
-width = 1280
-height = 720
-headless = true
-timeout_ms = 15000
-settle_ms = 350
-show_cursor_overlay = true
-vision_enabled = true
-vision_quality = 35
-vision_max_base64_chars = 160000
-```
-
-`timeout_ms` is Playwright's default action/navigation timeout. `settle_ms` is the delay between a successful action and the observation capture.
-
----
-
-## Input protocol
-
-Normal text is submitted only after a blank line. In the Notion UI, type the command and press **Enter twice**.
-
-```text
-> pwd
-
-```
-
-After submission, the Input block is reset to:
-
-```text
-> 
-```
-
-### Control commands
-
-| Action | Long form | Short form | Example |
-| --- | --- | --- | --- |
-| Special key | `:key NAME` | `:k NAME` | `:k ENTER` |
-| Ctrl key | `:ctrl KEY` | `:c KEY` | `:c O` |
-| Raw input | `:send TEXT` | `:s TEXT` | `:s \\e:wq\\r` |
-| Resize | `:resize COLSxROWS` | `:rs COLSxROWS` | `:rs 140x50` |
-
-Key aliases:
-
-```text
-ENTER      RETURN RET ENT
-BACKSPACE  BS BKSP
-ESC        ESCAPE
-DELETE     DEL
-INSERT     INS
-PAGEUP     PGUP
-PAGEDOWN   PGDN
-```
-
-Other supported keys:
-
-```text
-UP DOWN LEFT RIGHT
-HOME END
-TAB
-F1 ... F12
-```
-
-Immediate control tokens:
-
-```text
-^C   interrupt
-^D   EOF
-^Z   suspend
-^L   clear / redraw
-^\   quit signal
-```
-
----
-
-## TUI examples
-
-### Codex / Claude Code
-
-Submit text already visible in the TUI:
-
-```text
-> :k ENTER
-```
-
-Edit the current input:
-
-```text
-> :k BS
-> :k LEFT
-> :k RIGHT
-```
-
-### nano
-
-```text
-> :c O        # save
-> :k ENTER    # confirm filename
-> :c X        # exit
-> :c W        # search
-```
-
-### vim
-
-```text
-> :s \e:wq\r   # save and quit
-> :s \e:q!\r   # quit without saving
-```
+Coordinate actions are guarded by the current `observation_id`, preventing old screenshot coordinates from being applied after the page changes. The full browser command syntax, coordinate rules, focus/keyboard behavior, hover workflow, failure recovery and current limitations are all in **[CONTROL_COMMANDS.md](./CONTROL_COMMANDS.md)**.
 
 ---
 
