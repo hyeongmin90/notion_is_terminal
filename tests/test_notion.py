@@ -2,6 +2,7 @@ from notion_is_terminal.notion import (
     MAX_RICH_TEXT_CHUNK,
     NotionClient,
     NotionError,
+    NotionPageSearchResult,
     BrowserAnchors,
     RuntimeAnchors,
     RuntimeBlocks,
@@ -228,3 +229,66 @@ def test_help_page_contains_agent_commands_and_recovery():
     assert "For GPT / Agents" in text
     assert ":b click <observation_id> <x> <y>" in text
     assert "t4g reinit" in text
+
+
+class FakeSearchNotionClient(NotionClient):
+    def __init__(self):
+        self.last_request = None
+
+    def _request(self, method, path, *, json=None):
+        self.last_request = (method, path, json)
+        return {
+            "results": [
+                {
+                    "object": "page",
+                    "id": "page-1",
+                    "url": "https://notion.so/project",
+                    "properties": {
+                        "Name": {
+                            "type": "title",
+                            "title": [
+                                {"plain_text": "Project "},
+                                {"plain_text": "Root"},
+                            ],
+                        }
+                    },
+                },
+                {
+                    "object": "database",
+                    "id": "db-1",
+                    "properties": {},
+                },
+                {
+                    "object": "page",
+                    "id": "page-2",
+                    "url": "https://notion.so/untitled",
+                    "properties": {},
+                },
+            ]
+        }
+
+
+def test_search_pages_filters_pages_and_extracts_titles():
+    notion = FakeSearchNotionClient()
+    results = notion.search_pages("project", limit=10)
+
+    assert results == [
+        NotionPageSearchResult("page-1", "Project Root", "https://notion.so/project"),
+        NotionPageSearchResult("page-2", "(untitled)", "https://notion.so/untitled"),
+    ]
+
+    method, path, payload = notion.last_request
+    assert method == "POST"
+    assert path == "/search"
+    assert payload["query"] == "project"
+    assert payload["filter"] == {"property": "object", "value": "page"}
+    assert payload["page_size"] == 10
+
+
+def test_search_pages_blank_query_lists_recent_pages():
+    notion = FakeSearchNotionClient()
+    notion.search_pages("", limit=5)
+
+    payload = notion.last_request[2]
+    assert "query" not in payload
+    assert payload["page_size"] == 5
