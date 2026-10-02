@@ -1,6 +1,13 @@
 from pathlib import Path
 
-from notion_is_terminal.config import AppConfig, NotionSettings, TerminalSettings, load_config, write_config
+from notion_is_terminal.config import (
+    AppConfig,
+    NotionSettings,
+    SandboxSettings,
+    TerminalSettings,
+    load_config,
+    write_config,
+)
 
 
 def test_config_round_trip(tmp_path: Path):
@@ -27,6 +34,12 @@ def test_config_round_trip(tmp_path: Path):
             poll_interval=1.0,
             refresh_interval=1.5,
             health_check_interval=12.0,
+            sandbox=SandboxSettings(
+                mode="workspace",
+                workspace="/tmp/project",
+                deny_read=[".env"],
+                deny_write=[".git"],
+            ),
         ),
     )
     write_config(config, path)
@@ -36,9 +49,16 @@ def test_config_round_trip(tmp_path: Path):
     assert loaded.notion.help_page_id == "help"
     assert loaded.notion.help_page_url == "https://notion.so/help"
     assert loaded.terminal.input_prompt == "> "
+    assert loaded.terminal.sandbox.mode == "none"
+    assert loaded.terminal.sandbox.deny_read == []
+    assert loaded.terminal.sandbox.deny_write == []
     assert loaded.terminal.columns == 100
     assert loaded.terminal.rows == 30
     assert loaded.terminal.health_check_interval == 12.0
+    assert loaded.terminal.sandbox.mode == "workspace"
+    assert loaded.terminal.sandbox.workspace == "/tmp/project"
+    assert loaded.terminal.sandbox.deny_read == [".env"]
+    assert loaded.terminal.sandbox.deny_write == [".git"]
     assert loaded.browser.width == 1280
     assert loaded.browser.height == 720
 
