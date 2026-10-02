@@ -15,6 +15,7 @@ GPT가 Notion 커넥터를 통해 생성된 페이지를 읽고 수정할 수 �
 - `nano`, `vim`, `less`, `top`, Codex 같은 TUI 프로그램 조작
 - `cd`, 환경변수, REPL, foreground process 등 셸 상태 유지
 - Playwright로 웹 페이지를 열고 GPT Vision으로 화면을 확인한 뒤 viewport 좌표로 마우스 조작
+- 선택적으로 [Anthropic Sandbox Runtime (srt)](https://github.com/anthropic-experimental/sandbox-runtime) 안에서 셸 실행 — 파일시스템·네트워크 제한과 credential masking
 
 한 줄로 표현하면:
 
@@ -61,18 +62,24 @@ GPT 웹은 코드 분석, 문제 해결, 원격 작업 지시에 편리하지만
                                       ││ Notion API
                                       ││
                               ┌───────▼▼────────┐
-                              │ t4g │
-                              │     daemon      │
+                              │   t4g daemon    │──► Playwright Chromium
                               └───────┬─────────┘
                                       │
                                       ▼
-                              ┌───────────────┐
-                              │ persistent PTY│
-                              │ Bash / TUI    │
-                              └───────┬───────┘
+                              ┌─────────────────┐
+                              │ persistent PTY  │
+                              └───────┬─────────┘
+                                      │ sandbox.enabled = true
+                                      ▼
+                         ┌───────────────────────────┐
+                         │ srt (선택)                │
+                         │  bubblewrap fs rules      │
+                         │  network allowlist proxy  │
+                         │  credential masking       │
+                         └────────────┬──────────────┘
                                       │
                                       ▼
-                                WSL / Linux
+                              Bash / TUI on WSL / Linux
 ```
 
 Terminal 블록은 stdout을 계속 쌓는 로그가 아니라 **현재 터미널 화면의 snapshot**입니다.
@@ -105,6 +112,8 @@ ANSI cursor 이동, 화면 지우기, scrolling, redraw sequence를 로컬에서
 - single-instance lock
 - runtime block 자동 복구
 - `doctor` 진단
+- 선택적 srt PTY sandbox: read-only / workspace 파일시스템 격리, 쓰기 허용·차단 목록, 외부 도메인 허용 목록
+- Claude Code 방식의 credential masking (파일·환경변수): 셸에서는 `fake_value_<uuid>`로 보이고, 허용된 HTTPS 요청에는 실제 값이 실림
 
 현재 Bash, Python REPL, nano, vim 스타일 key sequence, Codex TUI, interactive prompt, long-running process + Ctrl-C 형태를 실제로 테스트했습니다.
 
@@ -369,6 +378,8 @@ Playwright로 메인 화면 smoke test까지 실행해.
 5. 브라우저 좌표 action은 반드시 최신 `observation_id`를 사용합니다.
 6. Vision이 필요하면 `vision_page_url`을 읽고 `data_base64`를 JPEG로 해석한 뒤 observation ID가 일치하는지 확인합니다.
 7. Browser Status가 `failed`라면 이전 좌표를 계속 쓰지 말고 오류를 먼저 처리합니다.
+8. Input은 빈 줄로 끝나야 제출됩니다. 에이전트가 Notion API나 커넥터로 Input을 쓸 때는 끝에 **줄바꿈을 하나 더**(총 3개) 붙입니다. 커넥터가 마지막 줄바꿈 하나를 지우는 경우가 있어, 빈 줄이 없으면 명령이 Input에 그대로 남습니다.
+9. Input에 `[SANDBOX UNAVAILABLE]`이 보이면 sandbox가 켜져 있는데 srt나 필요한 도구가 없는 상태입니다. 명령을 반복하지 말고 이 상태를 보고합니다.
 
 이 규칙은 생성되는 **Terminal4GPTWeb Help** Notion child page에도 같이 기록됩니다.
 
@@ -691,6 +702,125 @@ t4g daemon restart
 
 ---
 
+## PTY sandbox (srt)
+
+기본적으로 셸은 daemon을 실행한 사용자 권한 그대로 동작합니다. `sandbox.enabled = true`로 설정하면 Claude Code의 sandbox Bash가 사용하는 런타임인 [Anthropic Sandbox Runtime (srt)](https://github.com/anthropic-experimental/sandbox-runtime) 안에서 셸을 실행합니다. t4g가 sandbox를 직접 구현하지 않고, `[sandbox]` 설정을 srt settings 파일로 변환한 뒤 srt를 통해 셸을 띄웁니다.
+
+```text
+sandbox.enabled = false   →  bash                                  (srt 불필요)
+sandbox.enabled = true    →  srt -s ~/.cache/notion_is_terminal/srt-settings.json \
+                               -- script -qfec "bash --rcfile … -i" /dev/null
+```
+
+srt가 적용하는 세 가지:
+
+| 계층 | 동작 |
+| --- | --- |
+| 파일시스템 | bubblewrap mount: 허용한 경로 외 쓰기 차단, 지정한 경로 숨김 |
+| 네트워크 | 셸을 별도 네트워크 namespace에서 실행. 모든 요청은 srt 프록시를 거치며 `allowed_domains`만 통과 |
+| Credential | 설정한 파일·환경변수를 셸 안에서는 `fake_value_<uuid>`로 바꾸고, 허용된 host로 나가는 요청에서 프록시가 실제 값으로 치환 |
+
+`script`가 srt 세션 안에서 셸에 제어 터미널을 제공하므로 job control과 Ctrl-C가 그대로 동작하고, 터미널 크기 변경(`:rs`)도 전달됩니다.
+
+### 빠른 시작
+
+```bash
+# 1. 설치 (Node.js 22.12+)
+sudo apt install -y bubblewrap socat ripgrep util-linux
+npm install -g @anthropic-ai/sandbox-runtime
+
+# 2. 켜기: `t4g init`의 "Enable sandbox"에 y로 답하거나,
+#    config.toml의 [sandbox]에 enabled = true 설정
+
+# 3. 확인 후 재시작
+t4g doctor            # srt, bwrap, socat, rg, script 확인 + srt로 smoke test 실행
+t4g daemon restart
+```
+
+sandbox를 켰는데 도구가 없으면 daemon이 시작을 거부하고, Notion Input 블록에 설치 명령이 담긴 `[SANDBOX UNAVAILABLE]` 메시지를 쓰며 로그에도 남깁니다. `enabled = false`이면 위 도구는 필요 없습니다. `srt_path`로 특정 `srt` 실행 파일을 지정할 수 있고, 비워두면 `PATH`에서 찾습니다.
+
+### 파일시스템
+
+srt는 쓰기를 기본 차단하고, 읽기는 기본 허용합니다.
+
+| 설정 | 동작 |
+| --- | --- |
+| `read_only = false`, `workspace = false` | host 전체 읽기·쓰기 가능(`allowWrite = ["/"]`). 단, srt 보호 파일은 제외 |
+| `read_only = true`, `workspace = false` | host 전체 읽기 가능, `allow_write` 외에는 쓰기 불가 |
+| `read_only = false`, `workspace = true` | `/home`, `/root`, `/mnt`, `/media`를 숨기고 `workspace_path`만 보이며 쓰기 가능. 셸은 `workspace_path`에서 시작 |
+| `read_only = true`, `workspace = true` | 위와 같되 workspace도 read-only |
+| `allow_read` | 숨겨진 영역 안에서 읽기를 다시 허용할 경로. workspace 모드에서 홈 디렉터리 아래 설치한 도구(예: `~/.nvm`, `~/.local/bin`)를 쓸 때 지정. srt 자체 패키지는 자동으로 허용 |
+| `allow_write` | 추가로 쓰기 허용할 경로. 예: `~/.cache`, `~/.npm`, `~/.local` |
+| `deny_write` | 쓰기 가능한 영역 안에서 read-only로 둘 경로 (`allow_write`보다 우선) |
+| `deny_read` | 셸에서 숨길 경로 |
+
+- 상대 경로는 workspace 모드에서는 `workspace_path`, 그 외에는 `cwd` 기준입니다.
+- Linux에서 `allow_write`/`deny_write`는 실제 경로만 받으며(glob 불가), 생성·수정·삭제를 구분하지 않습니다.
+- srt는 쓰기 가능한 경로 안이라도 셸 rc 파일, `.gitconfig`, `.git/hooks`, `.git/config`, `.vscode/`, `.idea/` 등의 쓰기를 항상 막습니다.
+- 임시 파일은 srt가 지정한 쓰기 가능한 `TMPDIR`(`/tmp/claude`)에 만들어집니다.
+- 파일시스템 규칙은 셸 시작 시 고정되므로 변경 후 `t4g daemon restart`가 필요합니다.
+
+### 네트워크
+
+- `allowed_domains`에 있는 도메인만 접근할 수 있습니다. `*.example.com` 와일드카드는 가능하지만 `*` 단독은 srt가 거부합니다.
+- `denied_domains`가 `allowed_domains`보다 우선합니다.
+- 차단된 요청은 `Connection blocked by network allowlist`(HTTP) 또는 `CONNECT tunnel failed, response 403`(HTTPS)로 실패합니다.
+- 목록이 비어 있으면 네트워크가 완전히 차단됩니다.
+
+### Credential masking
+
+```toml
+[[sandbox.credentials.env]]
+name = "GITHUB_TOKEN"
+mode = "mask"
+inject_hosts = ["api.github.com"]
+
+[[sandbox.credentials.files]]
+path = ".env"
+mode = "mask"
+extract = '(?m)^(?:OPENAI_API_KEY|JWT_SECRET)=(\S+)$'
+on_extract_no_match = "deny"
+inject_hosts = ["api.openai.com"]
+```
+
+셸에서 보이는 값과 서버에 도착하는 값:
+
+```text
+$ echo $GITHUB_TOKEN
+fake_value_f38d04a3-6216-492f-96b4-d49ba120db07
+
+$ curl -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/user
+  → srt 프록시가 sentinel을 실제 값으로 치환 → api.github.com은 실제 토큰을 받음
+```
+
+- `mode = "mask"`: 값이 세션마다 새로 만든 `fake_value_<uuid>`로 바뀝니다. 실제 값은 해당 credential의 `inject_hosts`(기본값: 허용된 모든 도메인)로 가는 요청에서만 치환되므로, 한 credential이 다른 credential의 host로 새어 나가지 않습니다.
+- `mode = "deny"`: 파일은 읽을 수 없고, 환경변수는 제거됩니다.
+- `extract`: 정규식의 capture group 1만 masking하고 나머지는 그대로 둡니다(정확히 하나의 group 필요). 예를 들어 `DATABASE_URL` 안의 비밀번호만 가릴 수 있습니다. `extract`가 없으면 파일이나 값 전체를 바꿉니다.
+- `on_extract_no_match`: `warn`(그대로 노출, fail-open), `deny`(숨김, fail-closed), `error`(시작 거부)
+- masking을 쓰려면 `tls_terminate = true`가 필요합니다. 그래야 HTTPS 요청 안에서도 치환되며, srt가 sandbox에 CA 신뢰 환경변수(`SSL_CERT_FILE` 등)를 설정합니다. `allow_plaintext_inject = true`는 이를 명시적으로 끄는 옵션으로, 평문 HTTP 요청에만 실제 값을 넣습니다.
+- 프록시를 거치는 HTTP(S) 트래픽만 치환됩니다. SSH, DB 프로토콜 등 일반 TCP 연결에는 가짜 값이 그대로 전달됩니다.
+
+### Sandbox 제약
+
+> [!IMPORTANT]
+> sandbox 셸은 별도 네트워크 namespace에서 실행됩니다. sandbox 터미널 **안에서** 띄운 개발 서버는 sandbox 내부 loopback에서만 열리므로, sandbox 밖에서 동작하는 **Playwright 브라우저(`:b goto http://localhost:…`)로는 접근할 수 없습니다.** 로컬 서버 대상 브라우저 E2E는 서버를 sandbox 밖에서 띄우거나, 해당 작업에서는 sandbox를 끄세요.
+
+- 네트워크 허용 목록과 파일시스템 규칙 모두 변경 후 `t4g daemon restart`가 필요합니다.
+- masking은 설정한 파일과 환경변수만 보호하며 secret scanner가 아닙니다.
+- srt는 experimental 단계(`@anthropic-ai/sandbox-runtime` 0.0.x)이므로 `npm install -g @anthropic-ai/sandbox-runtime@0.0.78`처럼 버전 고정을 권장합니다.
+
+### 이전 bubblewrap sandbox에서 업그레이드
+
+이전 버전은 bubblewrap sandbox를 직접 구성했고 `masking = true`를 사용했습니다. 이런 config를 불러오면:
+
+- `enabled` 키가 없고 제한 옵션(`read_only`, `workspace`, `masking`, `deny_read`, `deny_write`)이 하나라도 켜져 있던 config는 `enabled = true`로 읽혀 계속 sandbox(이제 srt) 안에서 실행됩니다.
+- `masking` 키는 없어졌고, sandbox가 켜져 있으면 credential 규칙이 항상 적용됩니다.
+- `mode = "mask"` 규칙이 있으면 `tls_terminate = true`(또는 `allow_plaintext_inject = true`)를 추가해야 합니다. 없으면 명시적인 오류와 함께 config 로드가 실패합니다.
+- 이제 네트워크도 제한되므로 작업에 필요한 도메인을 `allowed_domains`에 추가하세요.
+- workspace 모드는 workspace를 `/workspace`로 옮기지 않고 실제 경로를 그대로 사용합니다.
+
+---
+
 ## 설정
 
 기본 경로:
@@ -774,44 +904,7 @@ vision_max_base64_chars = 160000
 
 환경변수 `NOTION_TOKEN`이 있으면 config의 token보다 우선합니다.
 
-### Sandbox (srt)
-
-`enabled`가 전체 스위치입니다. `false`이면 셸을 바로 실행하고 srt가 필요 없습니다. 나머지 `[sandbox]` 항목은 남겨둬도 무시됩니다. `true`이면 셸을 다음과 같이 실행합니다.
-
-```text
-srt -s ~/.cache/notion_is_terminal/srt-settings.json -- script -qfec "bash --rcfile … -i" /dev/null
-```
-
-t4g는 시작할 때마다 `[sandbox]` 설정으로 srt settings 파일을 다시 만듭니다. `srt`(또는 `bwrap`, `socat`, `rg`, `script`)가 없으면 daemon이 시작을 거부하고 설치 안내를 Notion Input 블록에 표시합니다. `srt_path`로 특정 `srt` 실행 파일을 지정할 수 있고, 비워두면 `PATH`에서 찾습니다.
-
-**파일시스템.** srt는 쓰기를 기본 차단하고, 읽기는 기본 허용합니다.
-
-| 설정 | 동작 |
-| --- | --- |
-| `read_only = false`, `workspace = false` | host 전체 읽기·쓰기 가능(`allowWrite = ["/"]`). 단, srt 보호 파일은 제외 |
-| `read_only = true`, `workspace = false` | host 전체 읽기 가능, `allow_write` 외에는 쓰기 불가 |
-| `read_only = false`, `workspace = true` | `/home`, `/root`, `/mnt`, `/media`를 숨기고 `workspace_path`만 보이며 쓰기 가능. 셸은 `workspace_path`에서 시작 |
-| `read_only = true`, `workspace = true` | 위와 같되 workspace도 read-only |
-| `allow_read` | 숨겨진 영역 안에서 읽기를 다시 허용할 경로. workspace 모드에서 홈 디렉터리 아래 설치한 도구(예: `~/.nvm`, `~/.local/bin`)를 쓸 때 지정. srt 자체 패키지는 자동으로 허용 |
-| `allow_write` | 추가로 쓰기 허용할 경로. 예: `~/.cache`, `~/.npm`, `~/.local` |
-| `deny_write` | 쓰기 가능한 영역 안에서 read-only로 둘 경로 (`allow_write`보다 우선) |
-| `deny_read` | 셸에서 숨길 경로 |
-
-상대 경로는 workspace 모드에서는 `workspace_path`, 그 외에는 `cwd` 기준입니다. Linux에서 `allow_write`/`deny_write`는 실제 경로만 받습니다(glob 불가). srt는 쓰기 가능한 경로 안이라도 셸 rc 파일, `.gitconfig`, `.git/hooks`, `.git/config`, `.vscode/`, `.idea/` 등의 쓰기를 항상 막습니다. 파일시스템 규칙은 셸 시작 시 고정되므로 변경 후 `t4g daemon restart`가 필요합니다.
-
-**네트워크.** 모든 외부 요청은 srt 프록시를 거치며 `allowed_domains`만 접근할 수 있습니다(`*.example.com` 와일드카드 가능, `*` 단독은 srt가 거부). `denied_domains`가 `allowed_domains`보다 우선합니다. 차단된 요청은 `Connection blocked by network allowlist`로 실패합니다. 목록이 비어 있으면 네트워크가 완전히 차단됩니다.
-
-**Credential masking.** `[[sandbox.credentials.files]]`와 `[[sandbox.credentials.env]]` 항목은 각각 다음 중 하나입니다.
-
-- `mode = "mask"`: 셸 안에서는 `fake_value_<uuid>`로 보입니다. srt 프록시를 거쳐 해당 credential의 `inject_hosts`(기본값: 허용된 모든 도메인)로 요청이 나갈 때 srt가 실제 값으로 바꿔 넣습니다.
-- `mode = "deny"`: 파일은 읽을 수 없고, 환경변수는 제거됩니다.
-
-`extract`를 지정하면 정규식의 capture group 1만 masking하고 나머지는 그대로 둡니다(정확히 하나의 group 필요). 예를 들어 `DATABASE_URL`의 비밀번호만 가릴 수 있습니다. `extract`가 없으면 파일이나 값 전체를 바꿉니다. `on_extract_no_match`는 `warn`(그대로 노출, fail-open), `deny`(숨김, fail-closed), `error`(시작 거부) 중 하나입니다.
-
-HTTPS 요청 안의 값을 바꾸려면 `tls_terminate = true`가 필요합니다(srt가 sandbox에 CA 신뢰 환경변수를 설정합니다). `allow_plaintext_inject = true`는 이를 명시적으로 끄는 옵션으로, 평문 HTTP 요청에만 실제 값을 넣습니다. 치환은 프록시를 거치는 HTTP(S) 트래픽에서만 일어나며, SSH·DB 프로토콜 등 일반 TCP 연결에는 가짜 값이 그대로 전달됩니다.
-
-> [!IMPORTANT]
-> Linux에서 srt는 셸을 별도 네트워크 namespace에서 실행합니다. sandbox 터미널 **안에서** 띄운 개발 서버는 sandbox 내부 loopback에서만 열리므로, sandbox 밖에서 동작하는 **Playwright 브라우저(`:b goto http://localhost:…`)로는 접근할 수 없습니다.** 로컬 서버 대상 브라우저 E2E는 서버를 sandbox 밖에서 띄우거나, 해당 작업에서는 sandbox를 끄세요.
+`[sandbox]` 항목 설명은 [PTY sandbox (srt)](#pty-sandbox-srt)를 참고하세요.
 
 config 수정 후:
 
@@ -883,7 +976,7 @@ masking은 universal secret scanner가 아니며, 설정한 파일과 환경변�
 
 GitHub Actions에서는 Python 3.11, 3.12, 3.13으로 전체 테스트를 실행합니다.
 
-sandbox는 실제 `PTYSession → pty.fork() → srt → script → bash` 경로로 환경변수·파일 masking, 외부 HTTP 요청에서의 sentinel→실제 값 치환, 네트워크 허용 목록, deny-write, workspace 격리, Ctrl-C, 터미널 크기 변경까지 E2E 검증했고, Browser는 Notion을 거쳐 Playwright navigation과 Vision payload observation ID까지 smoke test했습니다.
+sandbox는 실제 `PTYSession → pty.fork() → srt → script → bash` 경로로 환경변수·파일 masking, 외부 HTTP 요청에서의 sentinel→실제 값 치환, 네트워크 허용 목록, deny-write, workspace 격리, Ctrl-C, 터미널 크기 변경까지 E2E 검증했습니다. WSL2 Ubuntu(nvm으로 설치한 srt 0.0.78)에서도 Notion control page를 통해 `tls_terminate` HTTPS 치환(셸에서는 `fake_value_…`, 서버에는 실제 값 도착), 허용되지 않은 도메인의 HTTPS 차단, workspace 격리, 크기 변경을 확인했습니다. Browser는 Notion을 거쳐 Playwright navigation과 Vision payload observation ID까지 smoke test했습니다.
 
 실사용 중인 Notion control page 자체를 삭제하는 것처럼 파괴적인 복구 시나리오는 매 회귀 테스트마다 실제 페이지를 지우는 대신 자동 테스트로 검증합니다.
 
@@ -905,6 +998,7 @@ Notion은 저지연 터미널 전송 프로토콜이 아닙니다.
 - sub-second keystroke streaming
 - multiple simultaneous PTY sessions
 - WSL / Windows 재시작 후 자동 실행
+- srt sandbox 안에서 띄운 서버에 Playwright 브라우저로 접속 ([Sandbox 제약](#sandbox-제약) 참고)
 
 ---
 
