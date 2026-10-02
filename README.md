@@ -14,7 +14,8 @@ When GPT can read and edit the generated Notion page through a Notion connector,
 - send Ctrl combinations such as Ctrl-C, Ctrl-O, and Ctrl-X;
 - interact with TUI programs such as `nano`, `vim`, `less`, `top`, Codex, and other terminal applications;
 - keep shell state such as `cd`, environment variables, REPL sessions, and foreground programs alive between requests;
-- open web pages with Playwright, inspect screenshots with GPT Vision, and control the browser with viewport-relative mouse coordinates.
+- open web pages with Playwright, inspect screenshots with GPT Vision, and control the browser with viewport-relative mouse coordinates;
+- optionally run the shell inside [Anthropic Sandbox Runtime (srt)](https://github.com/anthropic-experimental/sandbox-runtime), with filesystem and network limits and credential masking.
 
 In short:
 
@@ -61,18 +62,24 @@ No public SSH endpoint, custom web server, database, or message queue is require
                                       ││ Notion API
                                       ││
                               ┌───────▼▼────────┐
-                              │ t4g │
-                              │     daemon      │
+                              │   t4g daemon    │──► Playwright Chromium
                               └───────┬─────────┘
                                       │
                                       ▼
-                              ┌───────────────┐
-                              │ persistent PTY│
-                              │ Bash / TUI    │
-                              └───────┬───────┘
+                              ┌─────────────────┐
+                              │ persistent PTY  │
+                              └───────┬─────────┘
+                                      │ sandbox.enabled = true
+                                      ▼
+                         ┌───────────────────────────┐
+                         │ srt (optional)            │
+                         │  bubblewrap fs rules      │
+                         │  network allowlist proxy  │
+                         │  credential masking       │
+                         └────────────┬──────────────┘
                                       │
                                       ▼
-                                WSL / Linux
+                              Bash / TUI on WSL / Linux
 ```
 
 The Terminal block is a **screen snapshot**, not an append-only stdout log. ANSI cursor movement, clearing, scrolling, and redraw sequences are interpreted locally with `pyte` before the screen is written back to Notion.
@@ -103,6 +110,8 @@ That is why redraw-oriented applications can work at a text-UI level.
 - Single-instance locking
 - Runtime block self-healing
 - `doctor` diagnostics
+- Optional srt PTY sandbox: read-only / workspace filesystem isolation, write allow/deny lists, outbound domain allowlist
+- Claude Code-style credential masking for files and environment variables: the shell sees `fake_value_<uuid>`, allowed HTTPS requests carry the real value
 
 Tested interaction patterns include Bash, Python REPL, nano, vim-style key sequences, Codex TUI, interactive prompts, and long-running processes interrupted with Ctrl-C.
 
@@ -362,6 +371,8 @@ For reliable agent behavior, use a strict observe → act → observe loop:
 5. For browser coordinate actions, use only the latest `observation_id`.
 6. When Vision is needed, fetch `vision_page_url`, decode `data_base64` as JPEG, and verify that its observation ID matches Browser Status.
 7. Stop and surface the error when Browser Status is `failed`; do not continue with stale coordinates.
+8. Input is submitted only when it ends with a blank line. When an agent writes Input through the Notion API or a connector, end the text with **one extra newline** (three in total): connectors may trim one, and without the blank line the command just sits in Input.
+9. If Input shows `[SANDBOX UNAVAILABLE]`, the sandbox is enabled but srt or one of its tools is missing; report it rather than retrying commands.
 
 This protocol is also documented in the generated **Terminal4GPTWeb Help** Notion child page.
 
@@ -679,6 +690,125 @@ t4g daemon restart
 
 ---
 
+## PTY sandbox (srt)
+
+By default the shell runs with the full permissions of the user running the daemon. Setting `sandbox.enabled = true` runs it inside [Anthropic Sandbox Runtime (srt)](https://github.com/anthropic-experimental/sandbox-runtime), the sandbox runtime behind Claude Code's sandboxed Bash. t4g does not reimplement the sandbox: it translates `[sandbox]` into an srt settings file and launches the shell through srt.
+
+```text
+sandbox.enabled = false   →  bash                                  (srt not needed)
+sandbox.enabled = true    →  srt -s ~/.cache/notion_is_terminal/srt-settings.json \
+                               -- script -qfec "bash --rcfile … -i" /dev/null
+```
+
+srt applies three layers:
+
+| Layer | What it does |
+| --- | --- |
+| Filesystem | bubblewrap mounts: writes denied except allowed paths; selected paths hidden |
+| Network | the shell gets its own network namespace; all traffic goes through srt's proxy, which only lets `allowed_domains` through |
+| Credentials | configured files and environment variables are replaced by `fake_value_<uuid>` inside the shell; the proxy swaps in the real value on requests to allowed hosts |
+
+`script` gives the shell a controlling terminal inside srt's session, so job control and Ctrl-C keep working. Terminal resize (`:rs`) is relayed to it as well.
+
+### Quick start
+
+```bash
+# 1. install (Node.js 22.12+)
+sudo apt install -y bubblewrap socat ripgrep util-linux
+npm install -g @anthropic-ai/sandbox-runtime
+
+# 2. enable: answer "y" to "Enable sandbox" in `t4g init`,
+#    or set `enabled = true` under [sandbox] in config.toml
+
+# 3. check and restart
+t4g doctor            # checks srt, bwrap, socat, rg, script and runs a smoke test through srt
+t4g daemon restart
+```
+
+If the sandbox is enabled and a tool is missing, the daemon refuses to start, writes `[SANDBOX UNAVAILABLE]` with the install command into the Notion Input block, and logs the same message. With `enabled = false` none of these tools are needed. `srt_path` points at a specific `srt` binary; empty means `srt` on `PATH`.
+
+### Filesystem
+
+srt denies writes by default and allows reads by default.
+
+| Setting | Effect |
+| --- | --- |
+| `read_only = false`, `workspace = false` | Whole host readable and writable (`allowWrite = ["/"]`), except srt's protected files. |
+| `read_only = true`, `workspace = false` | Whole host readable, nothing writable except `allow_write` entries. |
+| `read_only = false`, `workspace = true` | `/home`, `/root`, `/mnt` and `/media` are hidden; only `workspace_path` is visible and writable. The shell starts in `workspace_path`. |
+| `read_only = true`, `workspace = true` | Same, but the workspace is read-only too. |
+| `allow_read` | Paths kept readable inside hidden areas, e.g. `~/.nvm` or `~/.local/bin` for tools installed under the home directory in workspace mode. srt's own package is always kept readable. |
+| `allow_write` | Extra writable paths, e.g. `~/.cache`, `~/.npm`, `~/.local`. |
+| `deny_write` | Paths kept read-only inside writable areas (wins over `allow_write`). |
+| `deny_read` | Paths hidden from the shell. |
+
+- Relative paths resolve against `workspace_path` in workspace mode, otherwise against `cwd`.
+- On Linux, `allow_write`/`deny_write` take literal paths (no globs), and create/modify/delete are not distinguished.
+- srt always blocks writes to shell rc files, `.gitconfig`, `.git/hooks`, `.git/config`, `.vscode/`, `.idea/` and similar files, even inside writable paths.
+- Temporary files go to srt's writable `TMPDIR` (`/tmp/claude`).
+- Filesystem rules are fixed when the shell starts; run `t4g daemon restart` after changing them.
+
+### Network
+
+- Only `allowed_domains` are reachable. `*.example.com` wildcards are allowed; a bare `*` is rejected by srt.
+- `denied_domains` wins over `allowed_domains`.
+- Blocked requests fail with `Connection blocked by network allowlist` (HTTP) or `CONNECT tunnel failed, response 403` (HTTPS).
+- An empty list means no network at all.
+
+### Credential masking
+
+```toml
+[[sandbox.credentials.env]]
+name = "GITHUB_TOKEN"
+mode = "mask"
+inject_hosts = ["api.github.com"]
+
+[[sandbox.credentials.files]]
+path = ".env"
+mode = "mask"
+extract = '(?m)^(?:OPENAI_API_KEY|JWT_SECRET)=(\S+)$'
+on_extract_no_match = "deny"
+inject_hosts = ["api.openai.com"]
+```
+
+What the shell sees, and what reaches the server:
+
+```text
+$ echo $GITHUB_TOKEN
+fake_value_f38d04a3-6216-492f-96b4-d49ba120db07
+
+$ curl -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/user
+  → srt proxy replaces the sentinel → api.github.com receives the real token
+```
+
+- `mode = "mask"`: the value is replaced by a per-session `fake_value_<uuid>` sentinel. srt substitutes the real value only on requests to the credential's `inject_hosts` (default: every allowed domain), so one credential cannot be sent to another credential's host.
+- `mode = "deny"`: the file is unreadable / the variable is unset.
+- `extract`: only capture group 1 of the regex is masked (exactly one group required) and the rest stays intact, e.g. just the password inside `DATABASE_URL`. Without `extract` the whole file or value is replaced.
+- `on_extract_no_match`: `warn` (leave readable, fail-open), `deny` (hide, fail-closed) or `error` (refuse to start).
+- `tls_terminate = true` is required for masking so substitution also works inside HTTPS requests; srt sets CA trust variables (`SSL_CERT_FILE`, …) in the sandbox. `allow_plaintext_inject = true` is the explicit opt-out and only injects into plain-HTTP requests.
+- Only HTTP(S) traffic through the proxy is rewritten. SSH, database wire protocols and other raw TCP connections receive the fake value.
+
+### Sandbox limitations
+
+> [!IMPORTANT]
+> The sandboxed shell has its own network namespace. A dev server started **inside** the sandboxed terminal listens on the sandbox's loopback and is **not reachable from the Playwright browser** (`:b goto http://localhost:…`), which runs outside the sandbox. For browser E2E against a local server, start that server outside the sandbox or disable the sandbox for that workflow.
+
+- Network allowlist changes and filesystem changes both need `t4g daemon restart`.
+- Masking only protects configured files and variables; it is not a secret scanner.
+- srt is experimental (`@anthropic-ai/sandbox-runtime` 0.0.x); pinning a version such as `npm install -g @anthropic-ai/sandbox-runtime@0.0.78` is recommended.
+
+### Upgrading from the earlier bubblewrap sandbox
+
+Earlier versions built the bubblewrap sandbox themselves and used `masking = true`. When such a config is loaded:
+
+- configs without an `enabled` key that had any restriction on (`read_only`, `workspace`, `masking`, `deny_read`, `deny_write`) load as `enabled = true`, so they stay sandboxed (now through srt);
+- `masking` is no longer a key; credential rules apply whenever the sandbox is enabled;
+- a config with `mode = "mask"` credential rules must add `tls_terminate = true` (or `allow_plaintext_inject = true`), otherwise it fails to load with an explicit error;
+- the network is now restricted too: add the domains your work needs to `allowed_domains`;
+- workspace mode keeps real paths instead of remapping the workspace to `/workspace`.
+
+---
+
 ## Configuration
 
 Default:
@@ -762,44 +892,7 @@ vision_max_base64_chars = 160000
 
 `NOTION_TOKEN` overrides the token stored in the config.
 
-### Sandbox (srt)
-
-`enabled` is the master switch. When it is `false` the shell starts directly and srt is not required; every other `[sandbox]` key may stay in the file and is ignored. When it is `true` the shell is started as
-
-```text
-srt -s ~/.cache/notion_is_terminal/srt-settings.json -- script -qfec "bash --rcfile … -i" /dev/null
-```
-
-t4g regenerates that srt settings file from `[sandbox]` on every start. If `srt` (or `bwrap`, `socat`, `rg`, `script`) is missing, the daemon refuses to start and writes the install hint into the Notion Input block. `srt_path` points at a specific `srt` binary; empty means `srt` on `PATH`.
-
-**Filesystem.** srt denies writes by default and allows reads by default.
-
-| Setting | Effect |
-| --- | --- |
-| `read_only = false`, `workspace = false` | Whole host readable and writable (`allowWrite = ["/"]`), except srt's protected files. |
-| `read_only = true`, `workspace = false` | Whole host readable, nothing writable except `allow_write` entries. |
-| `read_only = false`, `workspace = true` | `/home`, `/root`, `/mnt` and `/media` are hidden; only `workspace_path` is visible and writable. The shell starts in `workspace_path`. |
-| `read_only = true`, `workspace = true` | Same, but the workspace is read-only too. |
-| `allow_read` | Paths kept readable inside hidden areas, e.g. `~/.nvm` or `~/.local/bin` for tools installed under the home directory in workspace mode. srt's own package is always kept readable. |
-| `allow_write` | Extra writable paths, e.g. `~/.cache`, `~/.npm`, `~/.local`. |
-| `deny_write` | Paths kept read-only inside writable areas (wins over `allow_write`). |
-| `deny_read` | Paths hidden from the shell. |
-
-Relative paths resolve against `workspace_path` in workspace mode, otherwise against `cwd`. On Linux, `allow_write`/`deny_write` take literal paths (no globs). srt always blocks writes to shell rc files, `.gitconfig`, `.git/hooks`, `.git/config`, `.vscode/`, `.idea/` and similar files, even inside writable paths. Filesystem rules are fixed when the shell starts; run `t4g daemon restart` after changing them.
-
-**Network.** All outbound traffic goes through srt's proxy and only `allowed_domains` are reachable (`*.example.com` wildcards are allowed; a bare `*` is rejected by srt). `denied_domains` wins over `allowed_domains`. Blocked requests fail with `Connection blocked by network allowlist`. An empty list means no network at all.
-
-**Credential masking.** Each `[[sandbox.credentials.files]]` and `[[sandbox.credentials.env]]` entry is either:
-
-- `mode = "mask"`: inside the shell the secret reads as `fake_value_<uuid>`. When a request leaves through srt's proxy to one of the credential's `inject_hosts` (default: every allowed domain), srt swaps the sentinel back for the real value;
-- `mode = "deny"`: the file is unreadable / the variable is unset.
-
-`extract` limits masking to capture group 1 of the regex (exactly one group required) and keeps the rest of the file or value intact, e.g. a `DATABASE_URL` password. Without `extract` the whole file or value is replaced. `on_extract_no_match` is `warn` (leave readable, fail-open), `deny` (hide, fail-closed) or `error` (refuse to start).
-
-Masking needs `tls_terminate = true` so srt can substitute values inside HTTPS requests (srt installs its CA trust variables in the sandbox). `allow_plaintext_inject = true` is the explicit opt-out, which only injects into plain-HTTP requests. Substitution only happens on HTTP(S) traffic through the proxy; SSH, database wire protocols and other raw TCP connections receive the fake value.
-
-> [!IMPORTANT]
-> On Linux, srt puts the shell in its own network namespace. A dev server started **inside** the sandboxed terminal listens on the sandbox's loopback and is **not reachable from the Playwright browser** (`:b goto http://localhost:…`), which runs outside the sandbox. For browser E2E against a local server, start that server outside the sandbox or disable the sandbox for that workflow.
+The `[sandbox]` keys are explained in [PTY sandbox (srt)](#pty-sandbox-srt).
 
 After config changes:
 
@@ -871,7 +964,7 @@ The regression suite currently covers:
 
 GitHub Actions runs the test suite on Python 3.11, 3.12 and 3.13.
 
-The sandbox path has been exercised end to end through `PTYSession → pty.fork() → srt → script → bash`: environment-variable and file masking, sentinel→real substitution on outbound HTTP requests, the network allowlist, deny-write, workspace isolation, Ctrl-C and terminal resize. Browser smoke testing has been verified through Notion with Playwright and the Vision payload observation ID.
+The sandbox path has been exercised end to end through `PTYSession → pty.fork() → srt → script → bash`: environment-variable and file masking, sentinel→real substitution on outbound HTTP requests, the network allowlist, deny-write, workspace isolation, Ctrl-C and terminal resize. On WSL2 Ubuntu (srt 0.0.78 installed through nvm) it was also driven through the Notion control page: HTTPS substitution with `tls_terminate` (the shell saw `fake_value_…`, the server received the real value), blocked HTTPS to a non-allowed domain, workspace isolation and resize. Browser smoke testing has been verified through Notion with Playwright and the Vision payload observation ID.
 
 Destructive recovery cases such as deleting the live production control page are covered by automated tests rather than repeatedly deleting the active user page during routine regression runs.
 
@@ -891,6 +984,7 @@ Currently not supported as a native Notion terminal experience:
 - sub-second keystroke streaming
 - multiple simultaneous PTY sessions
 - automatic startup after WSL / Windows restart
+- reaching a server started inside the srt sandbox from the Playwright browser (see [Sandbox limitations](#sandbox-limitations))
 
 ---
 
