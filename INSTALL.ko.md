@@ -71,7 +71,7 @@ sudo apt install -y bubblewrap
 bwrap --version
 ```
 
-`sandbox.enabled = false`로 사용할 경우 bubblewrap은 필요하지 않습니다.
+`read_only = false, workspace = false, masking = false`로 사용할 경우 bubblewrap은 필요하지 않습니다.
 
 ## 3. Notion Parent Page 만들기
 
@@ -350,10 +350,10 @@ Parent Page
 
 ```toml
 [sandbox]
-enabled = true
-workspace_enabled = true
-workspace = "/home/user/project"
-masking_enabled = true
+read_only = false
+workspace = true
+workspace_path = "/home/user/project"
+masking = true
 
 deny_read = []
 deny_write = [".git"]
@@ -373,7 +373,7 @@ enabled = false
 ```toml
 [sandbox]
 enabled = true
-workspace_enabled = false
+workspace = false
 ```
 
 효과:
@@ -387,8 +387,8 @@ workspace_enabled = false
 ```toml
 [sandbox]
 enabled = true
-workspace_enabled = true
-workspace = "/home/user/project"
+workspace = true
+workspace_path = "/home/user/project"
 ```
 
 효과:
@@ -404,13 +404,13 @@ workspace = "/home/user/project"
 규칙은 보존하면서 기능만 끌 수 있습니다.
 
 ```toml
-masking_enabled = false
+masking = false
 ```
 
 ### Credential masking ON
 
 ```toml
-masking_enabled = true
+masking = true
 
 [[sandbox.credentials.files]]
 path = ".env"
