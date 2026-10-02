@@ -149,23 +149,29 @@ def _prompt_sandbox(cwd: str) -> SandboxSettings:
             break
         print("Invalid selection. Choose 1, 2, or 3.")
 
-    mode = {"1": "none", "2": "read_only", "3": "workspace"}[choice]
+    enabled = choice != "1"
+    workspace_enabled = choice == "3"
     workspace = ""
-    if mode == "workspace":
+    if workspace_enabled:
         workspace = str(
             Path(_prompt("Sandbox workspace", cwd)).expanduser().resolve()
         )
 
-    deny_read = _prompt_path_list(
-        "Deny read paths (comma-separated, optional)",
-    )
-    deny_write = _prompt_path_list(
-        "Deny write paths (comma-separated, optional)",
-    )
+    deny_read: list[str] = []
+    deny_write: list[str] = []
+    if enabled:
+        deny_read = _prompt_path_list(
+            "Deny read paths (comma-separated, optional)",
+        )
+        deny_write = _prompt_path_list(
+            "Deny write paths (comma-separated, optional)",
+        )
 
     return SandboxSettings(
-        mode=mode,
+        enabled=enabled,
+        workspace_enabled=workspace_enabled,
         workspace=workspace,
+        masking_enabled=False,
         deny_read=deny_read,
         deny_write=deny_write,
     )
