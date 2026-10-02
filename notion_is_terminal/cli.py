@@ -128,19 +128,21 @@ def doctor(config_path: Path) -> int:
     sandbox = config.terminal.sandbox
     checks.append((
         True,
-        f"PTY sandbox: {sandbox.mode} (enabled={str(sandbox.enabled).lower()}, "
-        f"workspace_enabled={str(sandbox.workspace_enabled).lower()})",
+        "PTY security: "
+        f"read_only={str(sandbox.read_only).lower()}, "
+        f"workspace={str(sandbox.workspace).lower()}, "
+        f"masking={str(sandbox.masking).lower()} "
+        f"(effective={sandbox.mode})",
     ))
     checks.append((
         True,
-        f"Credential masking: {'enabled' if sandbox.masking_enabled else 'disabled'} "
-        f"({len(sandbox.credential_files)} configured file rule(s))",
+        f"Credential file rules: {len(sandbox.credential_files)} configured",
     ))
-    if sandbox.mode != "none":
+    if sandbox.active:
         bwrap = shutil.which("bwrap")
         checks.append((bwrap is not None, f"bubblewrap is installed: {bwrap or 'not found'}"))
-        if sandbox.mode == "workspace":
-            workspace = Path(sandbox.workspace or config.terminal.cwd).expanduser()
+        if sandbox.workspace:
+            workspace = Path(sandbox.workspace_path or config.terminal.cwd).expanduser()
             checks.append((workspace.is_dir(), f"Sandbox workspace exists: {workspace}"))
     try:
         import playwright  # noqa: F401
