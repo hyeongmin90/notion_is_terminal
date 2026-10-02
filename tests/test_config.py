@@ -1,7 +1,10 @@
 from pathlib import Path
 
+import pytest
+
 from notion_is_terminal.config import (
     AppConfig,
+    CredentialEnvSettings,
     CredentialFileSettings,
     NotionSettings,
     SandboxSettings,
@@ -36,12 +39,18 @@ def test_config_round_trip(tmp_path: Path):
             refresh_interval=1.5,
             health_check_interval=12.0,
             sandbox=SandboxSettings(
+                enabled=True,
+                srt_path="/opt/bin/srt",
                 read_only=False,
                 workspace=True,
                 workspace_path="/tmp/project",
-                masking=True,
+                allow_read=["~/.nvm"],
+                allow_write=["~/.cache"],
                 deny_read=["secrets/"],
                 deny_write=[".git"],
+                allowed_domains=["github.com", "*.npmjs.org"],
+                denied_domains=["evil.github.com"],
+                tls_terminate=True,
                 credential_files=[
                     CredentialFileSettings(
                         path=".env",
@@ -49,6 +58,13 @@ def test_config_round_trip(tmp_path: Path):
                         extract=r"(?m)^API_KEY=(\S+)$",
                         on_extract_no_match="deny",
                         mask_duplicates=True,
+                        inject_hosts=["api.example.com"],
+                    )
+                ],
+                credential_env=[
+                    CredentialEnvSettings(
+                        name="GITHUB_TOKEN",
+                        inject_hosts=["api.github.com"],
                     )
                 ],
             ),
@@ -64,20 +80,34 @@ def test_config_round_trip(tmp_path: Path):
     assert loaded.terminal.columns == 100
     assert loaded.terminal.rows == 30
     assert loaded.terminal.health_check_interval == 12.0
-    assert loaded.terminal.sandbox.read_only is False
-    assert loaded.terminal.sandbox.workspace is True
-    assert loaded.terminal.sandbox.mode == "workspace"
-    assert loaded.terminal.sandbox.workspace_path == "/tmp/project"
-    assert loaded.terminal.sandbox.masking is True
-    assert loaded.terminal.sandbox.deny_read == ["secrets/"]
-    assert loaded.terminal.sandbox.deny_write == [".git"]
-    assert len(loaded.terminal.sandbox.credential_files) == 1
-    masked = loaded.terminal.sandbox.credential_files[0]
+    sandbox = loaded.terminal.sandbox
+    assert sandbox.enabled is True
+    assert sandbox.srt_path == "/opt/bin/srt"
+    assert sandbox.read_only is False
+    assert sandbox.workspace is True
+    assert sandbox.mode == "workspace"
+    assert sandbox.workspace_path == "/tmp/project"
+    assert sandbox.allow_read == ["~/.nvm"]
+    assert sandbox.allow_write == ["~/.cache"]
+    assert sandbox.deny_read == ["secrets/"]
+    assert sandbox.deny_write == [".git"]
+    assert sandbox.allowed_domains == ["github.com", "*.npmjs.org"]
+    assert sandbox.denied_domains == ["evil.github.com"]
+    assert sandbox.tls_terminate is True
+    assert sandbox.allow_plaintext_inject is False
+    assert len(sandbox.credential_files) == 1
+    masked = sandbox.credential_files[0]
     assert masked.path == ".env"
     assert masked.mode == "mask"
     assert masked.extract == r"(?m)^API_KEY=(\S+)$"
     assert masked.on_extract_no_match == "deny"
     assert masked.mask_duplicates is True
+    assert masked.inject_hosts == ["api.example.com"]
+    assert len(sandbox.credential_env) == 1
+    env = sandbox.credential_env[0]
+    assert env.name == "GITHUB_TOKEN"
+    assert env.mode == "mask"
+    assert env.inject_hosts == ["api.github.com"]
     assert loaded.browser.width == 1280
     assert loaded.browser.height == 720
 
@@ -101,14 +131,16 @@ cwd = "/tmp"
 
     loaded = load_config(path)
     assert loaded.terminal.input_prompt == "> "
+    assert loaded.terminal.sandbox.enabled is False
     assert loaded.terminal.sandbox.read_only is False
     assert loaded.terminal.sandbox.workspace is False
     assert loaded.terminal.sandbox.mode == "none"
     assert loaded.terminal.sandbox.workspace_path == ""
-    assert loaded.terminal.sandbox.masking is False
+    assert loaded.terminal.sandbox.allowed_domains == []
     assert loaded.terminal.sandbox.deny_read == []
     assert loaded.terminal.sandbox.deny_write == []
     assert loaded.terminal.sandbox.credential_files == []
+    assert loaded.terminal.sandbox.credential_env == []
 
 
 def test_old_config_gets_browser_defaults(tmp_path: Path):
@@ -143,10 +175,7 @@ cwd = "/tmp"
     assert loaded.notion.browser_vision_block_id == ""
 
 
-def test_explicit_flags_can_preserve_inactive_rules(tmp_path: Path):
-    path = tmp_path / "config.toml"
-    path.write_text(
-        """
+HEADER = """
 [notion]
 token = "secret_test"
 page_id = "page"
@@ -156,200 +185,177 @@ input_block_id = "input"
 [terminal]
 shell = "/bin/bash"
 cwd = "/tmp"
+""".strip()
 
+
+def _load(tmp_path: Path, sandbox_toml: str):
+    path = tmp_path / "config.toml"
+    path.write_text(HEADER + "\n\n" + sandbox_toml.strip(), encoding="utf-8")
+    return load_config(path).terminal.sandbox
+
+
+def test_disabled_sandbox_keeps_inactive_rules(tmp_path: Path):
+    sandbox = _load(tmp_path, """
 [sandbox]
-read_only = false
-workspace = false
+enabled = false
+read_only = true
+workspace = true
 workspace_path = "/tmp/project"
-masking = false
 
 [[sandbox.credentials.files]]
 path = ".env"
-mode = "mask"
-extract = 'TOKEN=(\\S+)'
-""".strip(),
-        encoding="utf-8",
-    )
-
-    loaded = load_config(path)
-    assert loaded.terminal.sandbox.read_only is False
-    assert loaded.terminal.sandbox.workspace is False
-    assert loaded.terminal.sandbox.masking is False
-    assert loaded.terminal.sandbox.mode == "none"
-    assert loaded.terminal.sandbox.workspace_path == "/tmp/project"
-    assert len(loaded.terminal.sandbox.credential_files) == 1
+mode = "deny"
+""")
+    assert sandbox.enabled is False
+    assert sandbox.active is False
+    assert sandbox.mode == "none"
+    assert sandbox.read_only is True
+    assert sandbox.workspace is True
+    assert len(sandbox.credential_files) == 1
 
 
-def test_legacy_explicit_toggle_config_migrates(tmp_path: Path):
-    path = tmp_path / "config.toml"
-    path.write_text(
-        """
-[notion]
-token = "secret_test"
-page_id = "page"
-terminal_block_id = "terminal"
-input_block_id = "input"
+def test_enabled_without_restrictions_is_host_mode(tmp_path: Path):
+    sandbox = _load(tmp_path, """
+[sandbox]
+enabled = true
+""")
+    assert sandbox.enabled is True
+    assert sandbox.mode == "host"
 
-[terminal]
-shell = "/bin/bash"
-cwd = "/tmp"
 
+def test_read_only_and_workspace_can_be_enabled_together(tmp_path: Path):
+    sandbox = _load(tmp_path, """
+[sandbox]
+enabled = true
+read_only = true
+workspace = true
+workspace_path = "/tmp/project"
+""")
+    assert sandbox.mode == "workspace_read_only"
+
+
+@pytest.mark.parametrize(
+    "legacy",
+    [
+        "read_only = true",
+        "workspace = true",
+        "masking = true",
+        'deny_read = ["secrets"]',
+        'deny_write = [".git"]',
+    ],
+)
+def test_pre_enabled_configs_with_restrictions_stay_sandboxed(tmp_path: Path, legacy: str):
+    sandbox = _load(tmp_path, "[sandbox]\n" + legacy)
+    assert sandbox.enabled is True
+
+
+def test_pre_enabled_config_without_restrictions_stays_unsandboxed(tmp_path: Path):
+    sandbox = _load(tmp_path, """
+[sandbox]
+read_only = false
+workspace = false
+masking = false
+""")
+    assert sandbox.enabled is False
+
+
+def test_legacy_workspace_path_string_migrates(tmp_path: Path):
+    sandbox = _load(tmp_path, """
 [sandbox]
 enabled = true
 workspace_enabled = true
 workspace = "/tmp/project"
-masking_enabled = true
-""".strip(),
-        encoding="utf-8",
-    )
-
-    loaded = load_config(path)
-    assert loaded.terminal.sandbox.read_only is False
-    assert loaded.terminal.sandbox.workspace is True
-    assert loaded.terminal.sandbox.workspace_path == "/tmp/project"
-    assert loaded.terminal.sandbox.masking is True
-
-
-def test_legacy_disabled_toggle_config_stays_inactive(tmp_path: Path):
-    path = tmp_path / "config.toml"
-    path.write_text(
-        """
-[notion]
-token = "secret_test"
-page_id = "page"
-terminal_block_id = "terminal"
-input_block_id = "input"
-
-[terminal]
-shell = "/bin/bash"
-cwd = "/tmp"
-
-[sandbox]
-enabled = false
-workspace_enabled = true
-workspace = "/tmp/project"
-masking_enabled = true
-""".strip(),
-        encoding="utf-8",
-    )
-
-    loaded = load_config(path)
-    assert loaded.terminal.sandbox.read_only is False
-    assert loaded.terminal.sandbox.workspace is False
-    assert loaded.terminal.sandbox.masking is False
-    assert loaded.terminal.sandbox.workspace_path == "/tmp/project"
+""")
+    assert sandbox.workspace is True
+    assert sandbox.workspace_path == "/tmp/project"
+    assert sandbox.read_only is False
 
 
 def test_legacy_mode_workspace_maps_to_explicit_flags(tmp_path: Path):
-    path = tmp_path / "config.toml"
-    path.write_text(
-        """
-[notion]
-token = "secret_test"
-page_id = "page"
-terminal_block_id = "terminal"
-input_block_id = "input"
-
-[terminal]
-shell = "/bin/bash"
-cwd = "/tmp"
-
+    sandbox = _load(tmp_path, """
 [sandbox]
 mode = "workspace"
 workspace = "/tmp/project"
-""".strip(),
-        encoding="utf-8",
-    )
-
-    loaded = load_config(path)
-    assert loaded.terminal.sandbox.read_only is False
-    assert loaded.terminal.sandbox.workspace is True
-    assert loaded.terminal.sandbox.workspace_path == "/tmp/project"
-    assert loaded.terminal.sandbox.mode == "workspace"
+""")
+    assert sandbox.enabled is True
+    assert sandbox.workspace is True
+    assert sandbox.workspace_path == "/tmp/project"
+    assert sandbox.mode == "workspace"
 
 
 def test_legacy_read_only_mode_maps_to_explicit_flags(tmp_path: Path):
-    path = tmp_path / "config.toml"
-    path.write_text(
-        """
-[notion]
-token = "secret_test"
-page_id = "page"
-terminal_block_id = "terminal"
-input_block_id = "input"
-
-[terminal]
-shell = "/bin/bash"
-cwd = "/tmp"
-
+    sandbox = _load(tmp_path, """
 [sandbox]
-read_only = true
-workspace = false
-masking = false
-""".strip(),
-        encoding="utf-8",
-    )
-
-    loaded = load_config(path)
-    assert loaded.terminal.sandbox.read_only is True
-    assert loaded.terminal.sandbox.workspace is False
-    assert loaded.terminal.sandbox.mode == "read_only"
-
-
-def test_read_only_and_workspace_can_be_enabled_together(tmp_path: Path):
-    path = tmp_path / "config.toml"
-    path.write_text(
-        """
-[notion]
-token = "secret_test"
-page_id = "page"
-terminal_block_id = "terminal"
-input_block_id = "input"
-
-[terminal]
-shell = "/bin/bash"
-cwd = "/tmp"
-
-[sandbox]
-read_only = true
-workspace = true
-workspace_path = "/tmp/project"
-masking = false
-""".strip(),
-        encoding="utf-8",
-    )
-
-    loaded = load_config(path)
-    assert loaded.terminal.sandbox.read_only is True
-    assert loaded.terminal.sandbox.workspace is True
-    assert loaded.terminal.sandbox.mode == "workspace_read_only"
+mode = "read_only"
+""")
+    assert sandbox.enabled is True
+    assert sandbox.read_only is True
+    assert sandbox.mode == "read_only"
 
 
 def test_credential_extract_requires_one_capture_group(tmp_path: Path):
-    path = tmp_path / "config.toml"
-    path.write_text(
-        """
-[notion]
-token = "secret_test"
-page_id = "page"
-terminal_block_id = "terminal"
-input_block_id = "input"
-
-[terminal]
-shell = "/bin/bash"
-cwd = "/tmp"
-
+    with pytest.raises(ValueError, match="exactly one capture group"):
+        _load(tmp_path, """
 [sandbox]
-mode = "read_only"
+enabled = true
+tls_terminate = true
 
 [[sandbox.credentials.files]]
 path = ".env"
 mode = "mask"
 extract = 'TOKEN=\\S+'
-""".strip(),
-        encoding="utf-8",
-    )
+""")
 
-    import pytest
-    with pytest.raises(ValueError, match="exactly one capture group"):
-        load_config(path)
+
+def test_credential_env_name_must_be_valid(tmp_path: Path):
+    with pytest.raises(ValueError, match="environment variable name"):
+        _load(tmp_path, """
+[sandbox]
+enabled = true
+tls_terminate = true
+
+[[sandbox.credentials.env]]
+name = "NOT-A-NAME"
+""")
+
+
+def test_masking_requires_tls_terminate_or_plaintext_opt_in(tmp_path: Path):
+    with pytest.raises(ValueError, match="tls_terminate"):
+        _load(tmp_path, """
+[sandbox]
+enabled = true
+
+[[sandbox.credentials.env]]
+name = "GITHUB_TOKEN"
+""")
+
+    sandbox = _load(tmp_path, """
+[sandbox]
+enabled = true
+allow_plaintext_inject = true
+
+[[sandbox.credentials.env]]
+name = "GITHUB_TOKEN"
+""")
+    assert sandbox.allow_plaintext_inject is True
+
+
+def test_deny_only_credentials_do_not_need_tls_terminate(tmp_path: Path):
+    sandbox = _load(tmp_path, """
+[sandbox]
+enabled = true
+
+[[sandbox.credentials.files]]
+path = "~/.ssh"
+mode = "deny"
+""")
+    assert sandbox.credential_files[0].mode == "deny"
+
+
+def test_domain_entries_must_not_contain_spaces(tmp_path: Path):
+    with pytest.raises(ValueError, match="allowed_domains"):
+        _load(tmp_path, """
+[sandbox]
+enabled = true
+allowed_domains = ["github.com pypi.org"]
+""")

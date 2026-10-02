@@ -1001,15 +1001,19 @@ def help_page_children() -> list[dict[str, Any]]:
         bulleted_payload("Deleted whole Notion page — run t4g reinit, then t4g daemon restart."),
         heading_payload("Security"),
         paragraph_payload(
-            "PTY security features are explicit, composable config switches: read_only, workspace, and masking."
+            "The PTY sandbox is optional. With sandbox.enabled = true the shell runs inside "
+            "Anthropic Sandbox Runtime (srt), which enforces filesystem, network, and credential rules."
         ),
-        bulleted_payload("Unrestricted PTY — read_only = false, workspace = false, masking = false"),
-        bulleted_payload("Read-only host view — read_only = true, workspace = false"),
-        bulleted_payload("Workspace RW isolation — read_only = false, workspace = true, plus workspace_path"),
-        bulleted_payload("Workspace RO isolation — read_only = true, workspace = true, plus workspace_path"),
-        bulleted_payload("Credential masking — masking = true plus sandbox.credentials.files entries"),
+        bulleted_payload("Unrestricted PTY — enabled = false (srt not required)"),
+        bulleted_payload("Host view, writable — enabled = true, read_only = false, workspace = false"),
+        bulleted_payload("Read-only host view — enabled = true, read_only = true"),
+        bulleted_payload("Workspace isolation — enabled = true, workspace = true, plus workspace_path (read_only = true makes it read-only)"),
+        bulleted_payload("Writes are denied outside allowed paths; extra writable paths come from allow_write, exceptions from deny_write."),
+        bulleted_payload("Network is blocked except allowed_domains. A blocked request returns 'Connection blocked by network allowlist'."),
+        bulleted_payload("Masked credentials appear as fake_value_<uuid> inside the shell; srt swaps in the real value only on requests to allowed hosts."),
+        bulleted_payload("Inside the sandbox, a server started in the shell is not reachable from the Playwright browser, which runs outside the sandbox network."),
         callout_payload(
-            "Even with sandboxing, do not send sudo passwords, API keys, SSH private keys, or other secrets through Notion Input. Credential masking protects configured files; it is not a universal secret scanner.",
+            "Even with sandboxing, do not send sudo passwords, API keys, SSH private keys, or other secrets through Notion Input. Credential masking protects configured files and environment variables; it is not a universal secret scanner.",
             "🔐",
         ),
     ]

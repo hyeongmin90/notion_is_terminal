@@ -41,7 +41,7 @@ Notion
 
 선택:
 
-- `bubblewrap` — PTY sandbox를 사용할 경우 필요
+- PTY sandbox를 사용할 경우: Node.js 22.12+, [Anthropic Sandbox Runtime (`srt`)](https://github.com/anthropic-experimental/sandbox-runtime), `bubblewrap`, `socat`, `ripgrep`, `script`(util-linux)
 - ChatGPT GitHub 연결 — 코드/이슈/PR 분석과 로컬 테스트를 함께 사용할 경우 권장
 - ChatGPT 일정/자동화 — OPS 정기 점검에 활용 가능
 
@@ -64,14 +64,16 @@ sudo apt update
 sudo apt install -y git python3 python3-venv
 ```
 
-sandbox를 사용할 예정이라면:
+PTY sandbox(`sandbox.enabled = true`)를 사용할 예정이라면:
 
 ```bash
-sudo apt install -y bubblewrap
-bwrap --version
+sudo apt install -y bubblewrap socat ripgrep util-linux
+# srt는 Node.js 22.12 이상이 필요합니다
+npm install -g @anthropic-ai/sandbox-runtime
+srt --version
 ```
 
-`read_only = false, workspace = false, masking = false`로 사용할 경우 bubblewrap은 필요하지 않습니다.
+`sandbox.enabled = false`(기본값)로 사용하면 위 도구는 필요하지 않습니다. sandbox를 켰는데 `srt`가 없으면 daemon이 시작을 거부하고 설치 명령을 안내합니다.
 
 ## 3. Notion Parent Page 만들기
 
@@ -276,28 +278,32 @@ PTY가 시작할 기본 디렉터리입니다.
 /home/user/project
 ```
 
-### PTY security
+### PTY sandbox
 
-Wizard는 preset 대신 기능을 각각 묻습니다.
+먼저 sandbox 사용 여부를 묻고, 켠 경우에만 세부 옵션을 묻습니다.
 
 ```text
+Enable sandbox [y/N]:
 Read-only filesystem [y/N]:
 Restrict filesystem to one workspace [y/N]:
 Workspace path [...] :        # workspace=true일 때만
-Enable credential file masking [y/N]:
+Extra writable paths (comma-separated, optional, e.g. ~/.cache):
+Deny read paths (comma-separated, optional):
+Deny write paths (comma-separated, optional):
+Allowed network domains (comma-separated, '-' = no network) [github.com,...]:
 ```
+
+sandbox를 켰는데 srt나 시스템 도구가 없으면 wizard가 경고하지만 설정은 저장됩니다.
 
 조합:
 
-- `read_only=false, workspace=false`: 일반 PTY
+- `enabled=false`: 일반 PTY (srt 불필요)
+- `read_only=false, workspace=false`: host 전체 읽기·쓰기 가능
 - `read_only=true, workspace=false`: host 전체 read-only
-- `read_only=false, workspace=true`: 지정 workspace만 RW
+- `read_only=false, workspace=true`: 지정 workspace만 보이고 RW
 - `read_only=true, workspace=true`: 지정 workspace만 보이고 workspace 자체도 read-only
-- `masking=true`: credential file 규칙 적용. read_only/workspace 없이 단독 사용도 가능
 
-추가 `deny_read` / `deny_write` 경로도 입력할 수 있습니다.
-
-Credential masking의 파일별 규칙은 초기화 후 config에서 명시적으로 설정합니다.
+Credential masking 규칙은 초기화 후 config에서 명시적으로 설정합니다.
 
 ### 나머지 설정
 
@@ -345,100 +351,129 @@ Parent Page
    └─ Browser Vision Payload
 ```
 
-## 9. Sandbox / Workspace / Masking 설정
+## 9. Sandbox 설정 (srt)
 
-모든 보안 기능은 config에서 독립적으로 끄고 켤 수 있습니다.
+`enabled`가 전체 스위치입니다. 켜면 셸이 [Anthropic Sandbox Runtime (srt)](https://github.com/anthropic-experimental/sandbox-runtime) 안에서 실행되고, t4g가 `[sandbox]` 설정으로 `~/.cache/notion_is_terminal/srt-settings.json`을 만들어 srt에 넘깁니다.
 
 예:
 
 ```toml
 [sandbox]
+enabled = true
+srt_path = ""             # 비워두면 PATH의 srt 사용
 read_only = false
 workspace = true
 workspace_path = "/home/user/project"
-masking = true
-
+allow_read = ["~/.nvm"]       # workspace 모드에서도 보여야 하는 $HOME 아래 도구
+allow_write = ["~/.cache"]
 deny_read = []
 deny_write = [".git"]
+allowed_domains = ["github.com", "*.githubusercontent.com", "pypi.org", "files.pythonhosted.org"]
+denied_domains = []
+tls_terminate = true
+allow_plaintext_inject = false
 ```
 
-### 모든 filesystem 제한 OFF
+### Sandbox OFF
 
 ```toml
 [sandbox]
-read_only = false
-workspace = false
-masking = false
-deny_read = []
-deny_write = []
+enabled = false
 ```
 
-이 상태에서는 bubblewrap을 사용하지 않고 기존 PTY처럼 실행됩니다.
+srt를 거치지 않고 기존 PTY처럼 실행됩니다. 나머지 항목은 남겨둬도 무시됩니다.
+
+### Host 모드 (쓰기 가능)
+
+```toml
+[sandbox]
+enabled = true
+read_only = false
+workspace = false
+```
+
+효과:
+
+- host filesystem 읽기·쓰기 가능
+- srt 보호 파일(`.bashrc`, `.gitconfig`, `.git/hooks` 등)은 쓰기 차단
+- 네트워크는 `allowed_domains`만 허용
 
 ### Read-only
 
 ```toml
 [sandbox]
+enabled = true
 read_only = true
 workspace = false
-masking = false
+allow_write = []
 ```
 
 효과:
 
 - host filesystem read 가능
-- host filesystem write 차단
-- sandbox `/tmp`만 writable
+- host filesystem write 차단 (`allow_write` 경로만 예외)
+- 임시 파일은 srt가 지정한 `TMPDIR`(`/tmp/claude`)에 쓸 수 있음
 
 ### Workspace 격리
 
 ```toml
 [sandbox]
+enabled = true
 read_only = false
 workspace = true
 workspace_path = "/home/user/project"
-masking = false
 ```
 
 효과:
 
-- project는 sandbox 내부에서 `/workspace`로 보임
-- workspace는 RW
-- 실행에 필요한 system path는 RO
-- 다른 home/project는 노출하지 않음
-- sandbox 전용 HOME과 `/tmp` 사용
+- `/home`, `/root`, `/mnt`, `/media`는 숨기고 workspace만 보임
+- workspace는 RW, 셸은 workspace에서 시작
+- 경로는 실제 경로 그대로 보임 (`/workspace`로 바뀌지 않음)
+- 시스템 경로(`/usr`, `/etc` 등)는 읽기만 가능
+- 캐시처럼 추가로 쓸 경로는 `allow_write`에 지정 (예: `~/.cache`, `~/.npm`)
+- nvm으로 설치한 node처럼 홈 아래 도구를 쓰려면 `allow_read`에 지정 (예: `~/.nvm`). srt 자체 패키지는 자동으로 읽기 허용
 
 ### Workspace + Read-only
 
 ```toml
 [sandbox]
+enabled = true
 read_only = true
 workspace = true
 workspace_path = "/home/user/project"
-masking = false
 ```
 
-이 경우 workspace만 노출되며 `/workspace` 자체도 read-only입니다.
+workspace만 보이며 workspace 자체도 read-only입니다.
 
-### Credential masking OFF
+### 쓰기 제어 범위
 
-규칙은 보존하면서 기능만 끌 수 있습니다.
+- `allow_write`: 추가로 쓰기 허용할 경로
+- `deny_write`: 쓰기 가능한 영역 안에서 다시 막을 경로 (`allow_write`보다 우선)
+- Linux에서는 실제 경로 단위로만 지정할 수 있습니다(glob 불가). 생성·수정·삭제는 구분되지 않습니다.
+- 파일시스템 규칙은 셸 시작 시 고정되므로 변경 후 `t4g daemon restart`가 필요합니다.
+
+### 네트워크
+
+- `allowed_domains`에 있는 도메인만 접근 가능합니다(`*.example.com` 가능, `*` 단독은 srt가 거부).
+- `denied_domains`가 우선합니다.
+- 목록이 비어 있으면 네트워크가 완전히 차단됩니다.
+- sandbox 터미널 안에서 띄운 서버는 별도 네트워크 namespace에 있으므로 **Playwright 브라우저에서 접근할 수 없습니다.** 로컬 서버 E2E는 서버를 sandbox 밖에서 띄우세요.
+
+### Credential masking
 
 ```toml
-masking = false
-```
-
-### Credential masking ON
-
-```toml
-masking = true
-
 [[sandbox.credentials.files]]
 path = ".env"
 mode = "mask"
 extract = '(?m)^(?:OPENAI_API_KEY|DATABASE_URL|JWT_SECRET)=(\S+)$'
 on_extract_no_match = "deny"
 mask_duplicates = false
+inject_hosts = ["api.openai.com"]
+
+[[sandbox.credentials.env]]
+name = "GITHUB_TOKEN"
+mode = "mask"
+inject_hosts = ["api.github.com"]
 ```
 
 실제:
@@ -457,19 +492,15 @@ DATABASE_URL=fake_value_<uuid>
 PORT=8080
 ```
 
-`extract`의 **capture group 1**만 masking됩니다.
+환경변수도 마찬가지로 `echo $GITHUB_TOKEN`은 `fake_value_<uuid>`를 출력합니다. 프로그램이 이 값을 담아 `inject_hosts`(기본값: 허용된 모든 도메인)로 HTTP(S) 요청을 보내면, srt 프록시가 요청이 나가는 시점에 실제 값으로 바꿉니다.
 
-`extract`를 생략하면 파일 전체가 하나의 sentinel로 바뀝니다.
-
-`on_extract_no_match`:
-
-- `warn`: 경고 후 실제 파일을 그대로 노출 — fail-open
-- `deny`: masking 대신 read deny — fail-closed
-- `error`: PTY 시작 자체를 실패시킴
+- `extract`의 **capture group 1**만 masking됩니다(정확히 하나의 group 필요). 생략하면 파일/값 전체가 바뀝니다.
+- `mode = "deny"`: 파일은 읽을 수 없고, 환경변수는 제거됩니다.
+- `on_extract_no_match`: `warn`(그대로 노출, fail-open), `deny`(숨김, fail-closed), `error`(시작 거부)
+- HTTPS 요청에서 치환하려면 `tls_terminate = true`가 필요합니다. `allow_plaintext_inject = true`는 이를 명시적으로 끄는 옵션이며 평문 HTTP에만 치환합니다.
+- SSH, DB 프로토콜 등 HTTP가 아닌 연결에는 가짜 값이 그대로 전달됩니다.
 
 보수적인 credential 설정에는 `deny` 또는 `error`를 권장합니다.
-
-> 현재는 Claude-style **file masking 단계만** 구현되어 있습니다. Sentinel을 허용된 외부 host로 보낼 때 실제 secret으로 다시 바꾸는 egress proxy/injectHosts 기능은 아직 없습니다. 따라서 masking된 credential로 실제 외부 인증을 수행해야 하는 프로그램은 현재 실패할 수 있습니다.
 
 설정을 수정했다면:
 
@@ -489,8 +520,10 @@ t4g doctor
 - Linux / WSL
 - shell
 - working directory
-- bubblewrap 설치 여부
+- sandbox 켜짐 여부, 모드, 네트워크 허용 목록, credential 규칙 개수
+- sandbox를 켠 경우 `srt`, `bwrap`, `socat`, `rg`, `script` 설치 여부
 - workspace 존재 여부
+- 설정된 정책으로 srt에서 `true` 실행 (smoke test)
 - Notion page
 - Terminal/Input blocks
 - Playwright Python package
@@ -622,13 +655,14 @@ t4g daemon restart
 
 - daemon은 root로 실행하지 않기
 - Notion Input에 password/token/private key 직접 입력하지 않기
-- 가능하면 workspace sandbox 사용
-- credential 파일은 masking 또는 deny 정책 적용
+- 가능하면 `sandbox.enabled = true` + workspace 격리 사용
+- `allowed_domains`는 작업에 필요한 도메인으로만 제한
+- credential 파일과 환경변수는 masking 또는 deny 정책 적용
 - `.git`, 중요한 설정 디렉터리는 필요하면 `deny_write`
 - Notion control page 접근 권한 제한
-- masking은 **설정된 파일/패턴만** 보호하며 universal secret scanner가 아님
+- masking은 **설정된 파일/환경변수만** 보호하며 universal secret scanner가 아님
+- 실제 값 치환은 srt 프록시를 거치는 HTTP(S) 요청에만 적용됨
 - Docker socket을 sandbox에 노출하는 기능은 현재 제공하지 않음
-- 현재 network isolation / credential egress proxy는 구현되지 않음
 
 ## 다음 문서
 

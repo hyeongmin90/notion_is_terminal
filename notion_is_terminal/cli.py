@@ -3,8 +3,9 @@ from __future__ import annotations
 import argparse
 import os
 import platform
-import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from . import __version__
@@ -19,6 +20,7 @@ from .background import (
 from .config import DEFAULT_CONFIG_PATH, load_config
 from .daemon import TerminalDaemon
 from .notion import NotionClient, NotionError
+from .sandbox import SRT_INSTALL_HINT, sandbox_dependencies
 from .wizard import run_init, run_reinit
 
 
@@ -126,24 +128,35 @@ def doctor(config_path: Path) -> int:
     checks.append((os.access(Path(config.terminal.cwd).expanduser(), os.R_OK | os.X_OK), "Working directory is accessible"))
 
     sandbox = config.terminal.sandbox
-    checks.append((
-        True,
-        "PTY security: "
-        f"read_only={str(sandbox.read_only).lower()}, "
-        f"workspace={str(sandbox.workspace).lower()}, "
-        f"masking={str(sandbox.masking).lower()} "
-        f"(effective={sandbox.mode})",
-    ))
-    checks.append((
-        True,
-        f"Credential file rules: {len(sandbox.credential_files)} configured",
-    ))
-    if sandbox.active:
-        bwrap = shutil.which("bwrap")
-        checks.append((bwrap is not None, f"bubblewrap is installed: {bwrap or 'not found'}"))
+    if not sandbox.enabled:
+        checks.append((True, "PTY sandbox: disabled (shell runs unrestricted; srt not required)"))
+    else:
+        checks.append((
+            True,
+            "PTY sandbox: enabled via srt "
+            f"(read_only={str(sandbox.read_only).lower()}, "
+            f"workspace={str(sandbox.workspace).lower()}, effective={sandbox.mode})",
+        ))
+        checks.append((
+            True,
+            f"Network allowlist: {', '.join(sandbox.allowed_domains) or 'none (all network blocked)'}",
+        ))
+        checks.append((
+            True,
+            "Credential rules: "
+            f"{len(sandbox.credential_files)} file(s), {len(sandbox.credential_env)} env var(s)",
+        ))
+        dependencies = sandbox_dependencies(sandbox)
+        for name, path in dependencies:
+            hint = ""
+            if path is None:
+                hint = f" — install: {SRT_INSTALL_HINT}" if name == "srt" else ""
+            checks.append((path is not None, f"{name} is installed: {path or 'not found'}{hint}"))
         if sandbox.workspace:
             workspace = Path(sandbox.workspace_path or config.terminal.cwd).expanduser()
             checks.append((workspace.is_dir(), f"Sandbox workspace exists: {workspace}"))
+        if all(path is not None for _name, path in dependencies):
+            checks.append(_sandbox_smoke_test(config))
     try:
         import playwright  # noqa: F401
         checks.append((True, "Playwright Python package is installed"))
@@ -175,6 +188,45 @@ def doctor(config_path: Path) -> int:
         print(("✓" if ok else "✗") + " " + message)
         failed |= not ok
     return 1 if failed else 0
+
+
+def _sandbox_smoke_test(config) -> tuple[bool, str]:
+    """Run `true` through srt with the configured policy."""
+    from .sandbox import (
+        build_srt_settings,
+        require_sandbox_dependencies,
+        srt_package_root,
+        workspace_dir,
+        write_srt_settings,
+    )
+
+    terminal = config.terminal
+    cwd = Path(terminal.cwd).expanduser().resolve()
+    run_cwd = workspace_dir(terminal) if terminal.sandbox.workspace else cwd
+    try:
+        srt = require_sandbox_dependencies(terminal.sandbox)
+        with tempfile.TemporaryDirectory(prefix="t4g-doctor-") as tmp:
+            settings_path = write_srt_settings(
+                build_srt_settings(
+                    terminal,
+                    cwd=cwd,
+                    readable_paths=[srt_package_root(srt)],
+                ),
+                Path(tmp) / "srt-settings.json",
+            )
+            result = subprocess.run(
+                [srt, "-s", str(settings_path), "-c", "true"],
+                cwd=run_cwd,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+    except Exception as exc:
+        return False, f"srt sandbox smoke test: {exc}"
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip().splitlines()
+        return False, "srt sandbox smoke test failed: " + (detail[0] if detail else f"exit {result.returncode}")
+    return True, "srt sandbox smoke test passed"
 
 
 if __name__ == "__main__":

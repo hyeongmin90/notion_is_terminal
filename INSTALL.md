@@ -40,7 +40,7 @@ Required:
 
 Optional:
 
-- `bubblewrap` for PTY sandboxing
+- PTY sandbox: Node.js 22.12+, [Anthropic Sandbox Runtime (`srt`)](https://github.com/anthropic-experimental/sandbox-runtime), `bubblewrap`, `socat`, `ripgrep`, `script` (util-linux)
 - ChatGPT GitHub connection for repository-aware development workflows
 - ChatGPT scheduled tasks/automations for recurring operations checks
 
@@ -61,14 +61,16 @@ sudo apt update
 sudo apt install -y git python3 python3-venv
 ```
 
-For sandbox support:
+Only if you plan to enable the PTY sandbox (`sandbox.enabled = true`):
 
 ```bash
-sudo apt install -y bubblewrap
-bwrap --version
+sudo apt install -y bubblewrap socat ripgrep util-linux
+# Node.js 22.12+ is required for srt
+npm install -g @anthropic-ai/sandbox-runtime
+srt --version
 ```
 
-Bubblewrap is not required when `read_only = false, workspace = false, masking = false`.
+With `sandbox.enabled = false` (the default) none of these are required. If the sandbox is enabled and `srt` is missing, the daemon refuses to start and shows the install command.
 
 ## 3. Create a Notion parent page
 
@@ -181,16 +183,17 @@ The wizard asks for:
 - parent page via Search Page or URL/Page ID
 - shell
 - initial working directory
-- Read-only filesystem toggle
-- Workspace restriction toggle and optional workspace path
-- Credential masking toggle
-- optional deny-read / deny-write paths
+- whether to enable the srt PTY sandbox, and if so:
+  - Read-only filesystem toggle
+  - Workspace restriction toggle and optional workspace path
+  - extra writable paths, deny-read / deny-write paths
+  - allowed network domains
 - prompt label, terminal size and refresh timing
 - generated Notion page title
 
-The security prompts are independent switches. Enabling both Read-only and Workspace makes the selected workspace visible but read-only. Enabling masking without read-only/workspace is also valid; bubblewrap is then used only to apply the configured masking/deny mounts.
+Read-only and Workspace are independent switches. Enabling both makes the selected workspace visible but read-only. If srt or its system tools are missing the wizard warns but still saves the config.
 
-Credential-file rules are configured after initialization in `config.toml`.
+Credential masking rules are configured after initialization in `config.toml`.
 
 ## 8. Configuration
 
@@ -200,29 +203,35 @@ Default path:
 ~/.config/notion_is_terminal/config.toml
 ```
 
-Feature switches:
+Sandbox settings:
 
 ```toml
 [sandbox]
+enabled = true            # false: run the shell directly, srt not needed
+srt_path = ""             # empty: srt on PATH
 read_only = false
 workspace = true
 workspace_path = "/home/user/project"
-masking = true
-
+allow_read = ["~/.nvm"]       # tools under $HOME that must stay visible in workspace mode
+allow_write = ["~/.cache"]
 deny_read = []
 deny_write = [".git"]
+allowed_domains = ["github.com", "*.githubusercontent.com", "pypi.org", "files.pythonhosted.org"]
+denied_domains = []
+tls_terminate = true
+allow_plaintext_inject = false
 ```
 
 Semantics:
 
-- `read_only = false, workspace = false, masking = false`: unrestricted PTY when deny lists are also empty
-- `read_only = true, workspace = false`: read-only host mode
-- `read_only = false, workspace = true`: writable workspace isolation
+- `enabled = false`: unrestricted PTY; every other key is ignored
+- `read_only = false, workspace = false`: host readable and writable
+- `read_only = true, workspace = false`: read-only host; only `allow_write` paths are writable
+- `read_only = false, workspace = true`: `/home`, `/root`, `/mnt`, `/media` hidden; only the workspace is visible and writable
 - `read_only = true, workspace = true`: read-only workspace isolation
-- `masking = false`: credential rules remain in config but are not applied
-- `masking = true`: apply configured credential masking/deny rules; this can be enabled by itself
+- network: only `allowed_domains` are reachable; an empty list blocks all network access
 
-Structured credential masking:
+Credential masking (files and environment variables):
 
 ```toml
 [[sandbox.credentials.files]]
@@ -231,11 +240,17 @@ mode = "mask"
 extract = '(?m)^(?:OPENAI_API_KEY|DATABASE_URL|JWT_SECRET)=(\S+)$'
 on_extract_no_match = "deny"
 mask_duplicates = false
+inject_hosts = ["api.openai.com"]
+
+[[sandbox.credentials.env]]
+name = "GITHUB_TOKEN"
+mode = "mask"
+inject_hosts = ["api.github.com"]
 ```
 
-The regex must have exactly one capture group. Only capture group 1 is replaced with a per-PTY `fake_value_<uuid>` sentinel.
+Inside the shell, masked values read as `fake_value_<uuid>`. srt replaces them with the real value only in HTTP(S) requests to the credential's `inject_hosts` (default: all allowed domains). The regex must have exactly one capture group; only capture group 1 is replaced. Masking requires `tls_terminate = true` (or the explicit `allow_plaintext_inject = true`).
 
-Important: outbound sentinel→real credential injection is not implemented yet. Masked credentials therefore cannot currently be used for real external authentication unless masking is disabled for that workflow.
+A server started inside the sandboxed terminal is not reachable from the Playwright browser, which runs outside the sandbox's network namespace.
 
 Restart after config changes:
 
@@ -339,11 +354,11 @@ The saved parent page is reused. Older configs without a saved parent will show 
 
 - run the daemon as a non-root user
 - do not type passwords or raw credentials into Notion Input
-- prefer workspace sandboxing for development
-- use credential mask/deny rules for known credential files
+- prefer `sandbox.enabled = true` with workspace isolation for development
+- keep `allowed_domains` to what the work needs
+- use credential mask/deny rules for known credential files and environment variables
 - protect important paths with `deny_write` when appropriate
 - restrict access to the generated Notion control page
-- remember that masking protects only configured paths/patterns
-- network isolation and credential egress injection are not implemented yet
+- remember that masking protects only configured files/variables, and only HTTP(S) traffic gets the real value
 
 See [README.md](./README.md) for the full feature and command reference.
