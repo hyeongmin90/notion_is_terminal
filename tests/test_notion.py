@@ -228,6 +228,9 @@ def test_help_page_contains_agent_commands_and_recovery():
     )
     assert "For GPT / Agents" in text
     assert ":b click <observation_id> <x> <y>" in text
+    assert "Browser Control Loop" in text
+    assert "STALE_OBSERVATION" in text
+    assert "click field → wait for ready → type" in text
     assert "t4g reinit" in text
 
 
