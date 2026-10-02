@@ -7,9 +7,11 @@ import os
 import pty
 import re
 import shlex
+import shutil
 import signal
 import struct
 import termios
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -19,6 +21,19 @@ from .config import TerminalSettings
 
 
 OSC7_RE = re.compile(r"\x1b]7;file://[^/]*(/[^\x07\x1b]*)\x07")
+
+SANDBOX_WORKSPACE = Path("/workspace")
+SANDBOX_HOME = Path("/tmp/t4g-home")
+SANDBOX_RCFILE = Path("/tmp/t4g-bashrc")
+
+
+@dataclass(slots=True)
+class SandboxLaunch:
+    executable: str
+    argv: list[str]
+    cwd: str
+    home: str | None = None
+
 
 KEYS: dict[str, bytes] = {
     "UP": b"\x1b[A",
@@ -51,6 +66,189 @@ KEYS: dict[str, bytes] = {
 }
 
 
+def build_sandbox_launch(
+    settings: TerminalSettings,
+    *,
+    cwd: Path,
+    shell: Path,
+    rcfile: Path | None,
+    bwrap_path: str | None = None,
+) -> SandboxLaunch:
+    mode = settings.sandbox.mode
+    shell_path = str(shell)
+
+    if shell.name == "bash" and rcfile is not None:
+        direct_shell_argv = [shell_path, "--rcfile", str(rcfile), "-i"]
+    else:
+        direct_shell_argv = [shell_path, "-i"]
+
+    if mode == "none":
+        return SandboxLaunch(
+            executable=shell_path,
+            argv=direct_shell_argv,
+            cwd=str(cwd),
+        )
+
+    bwrap = bwrap_path or shutil.which("bwrap")
+    if not bwrap:
+        raise RuntimeError(
+            "PTY sandbox requires bubblewrap (bwrap). Install the 'bubblewrap' package "
+            "or set sandbox.mode = 'none'."
+        )
+
+    args = [
+        bwrap,
+        "--die-with-parent",
+        "--unshare-pid",
+    ]
+
+    workspace: Path | None = None
+    if mode == "read_only":
+        args.extend(["--ro-bind", "/", "/"])
+        sandbox_cwd = str(cwd)
+        sandbox_home: str | None = None
+        shell_in_sandbox = shell_path
+    elif mode == "workspace":
+        workspace = Path(settings.sandbox.workspace or settings.cwd).expanduser().resolve()
+        if not workspace.is_dir():
+            raise FileNotFoundError(f"Sandbox workspace does not exist: {workspace}")
+
+        _append_workspace_system_mounts(args)
+        args.extend(["--bind", str(workspace), str(SANDBOX_WORKSPACE)])
+        sandbox_cwd = str(SANDBOX_WORKSPACE)
+        sandbox_home = str(SANDBOX_HOME)
+        shell_in_sandbox = _map_workspace_executable(shell, workspace)
+    else:
+        raise ValueError(f"Unsupported sandbox mode: {mode}")
+
+    # Replace host proc/dev/tmp with sandbox-owned mounts. Network remains shared.
+    args.extend([
+        "--proc", "/proc",
+        "--dev", "/dev",
+        "--tmpfs", "/tmp",
+    ])
+    if sandbox_home is not None:
+        args.extend(["--dir", sandbox_home])
+
+    if shell.name == "bash" and rcfile is not None:
+        args.extend(["--ro-bind", str(rcfile), str(SANDBOX_RCFILE)])
+        shell_argv = [shell_in_sandbox, "--rcfile", str(SANDBOX_RCFILE), "-i"]
+    else:
+        shell_argv = [shell_in_sandbox, "-i"]
+
+    deny_write = _resolve_policy_paths(
+        settings.sandbox.deny_write,
+        mode=mode,
+        cwd=cwd,
+        workspace=workspace,
+    )
+    for host_path, sandbox_path in deny_write:
+        args.extend(["--ro-bind", str(host_path), str(sandbox_path)])
+
+    deny_read = _resolve_policy_paths(
+        settings.sandbox.deny_read,
+        mode=mode,
+        cwd=cwd,
+        workspace=workspace,
+    )
+    if deny_read:
+        mask_file, mask_dir = _sandbox_mask_paths()
+        # Apply deeper entries first so a denied parent can never be reopened by
+        # a more specific child mount.
+        deny_read.sort(key=lambda pair: len(pair[1].parts), reverse=True)
+        for host_path, sandbox_path in deny_read:
+            source = mask_dir if host_path.is_dir() else mask_file
+            args.extend(["--ro-bind", str(source), str(sandbox_path)])
+
+    args.extend(["--chdir", sandbox_cwd, "--", *shell_argv])
+    return SandboxLaunch(
+        executable=bwrap,
+        argv=args,
+        cwd=sandbox_cwd,
+        home=sandbox_home,
+    )
+
+
+def _append_workspace_system_mounts(args: list[str]) -> None:
+    usr = Path("/usr")
+    if not usr.is_dir():
+        raise RuntimeError("Workspace sandbox requires /usr to be available.")
+    args.extend(["--ro-bind", "/usr", "/usr"])
+
+    for path_text in ("/bin", "/sbin", "/lib", "/lib64"):
+        path = Path(path_text)
+        if path.is_symlink():
+            args.extend(["--symlink", os.readlink(path), path_text])
+        elif path.exists():
+            args.extend(["--ro-bind", path_text, path_text])
+
+    if Path("/etc").exists():
+        args.extend(["--ro-bind", "/etc", "/etc"])
+
+
+def _map_workspace_executable(shell: Path, workspace: Path) -> str:
+    resolved = shell.resolve()
+    try:
+        relative = resolved.relative_to(workspace)
+    except ValueError:
+        return str(shell)
+    return str(SANDBOX_WORKSPACE / relative)
+
+
+def _resolve_policy_paths(
+    values: list[str],
+    *,
+    mode: str,
+    cwd: Path,
+    workspace: Path | None,
+) -> list[tuple[Path, Path]]:
+    resolved: list[tuple[Path, Path]] = []
+    base = workspace if mode == "workspace" and workspace is not None else cwd
+
+    for raw in values:
+        candidate = Path(raw).expanduser()
+        if not candidate.is_absolute():
+            candidate = base / candidate
+
+        try:
+            host_path = candidate.resolve(strict=True)
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(
+                f"Sandbox policy path does not exist: {candidate}"
+            ) from exc
+
+        if mode == "workspace":
+            assert workspace is not None
+            try:
+                relative = host_path.relative_to(workspace)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Workspace sandbox policy path must stay inside {workspace}: {raw}"
+                ) from exc
+            if relative == Path(".") and raw in values:
+                # deny_write may intentionally cover the whole workspace, but
+                # deny_read on the root would make the configured cwd unusable.
+                pass
+            sandbox_path = SANDBOX_WORKSPACE / relative
+        else:
+            sandbox_path = host_path
+
+        resolved.append((host_path, sandbox_path))
+
+    return resolved
+
+
+def _sandbox_mask_paths() -> tuple[Path, Path]:
+    cache_dir = Path.home() / ".cache" / "notion_is_terminal" / "sandbox"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    mask_file = cache_dir / "deny-file"
+    mask_dir = cache_dir / "deny-dir"
+    if not mask_file.exists():
+        mask_file.write_bytes(b"")
+    mask_dir.mkdir(exist_ok=True)
+    return mask_file, mask_dir
+
+
 class PTYSession:
     """Persistent PTY-backed shell plus a text-mode terminal emulator."""
 
@@ -81,20 +279,28 @@ class PTYSession:
         if shell.name == "bash":
             self._rcfile = self._write_bash_rcfile()
 
+        launch = build_sandbox_launch(
+            self.settings,
+            cwd=cwd,
+            shell=shell,
+            rcfile=self._rcfile,
+        )
+        self.current_cwd = launch.cwd
+
         pid, master_fd = pty.fork()
         if pid == 0:
-            os.chdir(cwd)
+            if self.settings.sandbox.mode == "none":
+                os.chdir(cwd)
+
             env = os.environ.copy()
             env["TERM"] = "xterm-256color"
             env.setdefault("COLORTERM", "truecolor")
             env["COLUMNS"] = str(self.settings.columns)
             env["LINES"] = str(self.settings.rows)
+            if launch.home is not None:
+                env["HOME"] = launch.home
 
-            if shell.name == "bash" and self._rcfile is not None:
-                argv = [str(shell), "--rcfile", str(self._rcfile), "-i"]
-            else:
-                argv = [str(shell), "-i"]
-            os.execvpe(str(shell), argv, env)
+            os.execvpe(launch.executable, launch.argv, env)
             raise SystemExit(127)
 
         self.pid = pid
