@@ -252,7 +252,7 @@ mode = "read_only"
 [[sandbox.credentials.files]]
 path = ".env"
 mode = "mask"
-extract = "TOKEN=\\\S+"
+extract = 'TOKEN=\\S+'
 """.strip(),
         encoding="utf-8",
     )
