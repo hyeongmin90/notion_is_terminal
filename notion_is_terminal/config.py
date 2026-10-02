@@ -40,20 +40,36 @@ class CredentialFileSettings:
 
 @dataclass(slots=True)
 class SandboxSettings:
-    enabled: bool = False
-    workspace_enabled: bool = False
-    workspace: str = ""
-    masking_enabled: bool = False
+    read_only: bool = False
+    workspace: bool = False
+    workspace_path: str = ""
+    masking: bool = False
     deny_read: list[str] = field(default_factory=list)
     deny_write: list[str] = field(default_factory=list)
     credential_files: list[CredentialFileSettings] = field(default_factory=list)
 
     @property
+    def active(self) -> bool:
+        return (
+            self.read_only
+            or self.workspace
+            or self.masking
+            or bool(self.deny_read)
+            or bool(self.deny_write)
+        )
+
+    @property
     def mode(self) -> str:
-        """Compatibility/effective mode derived from explicit feature toggles."""
-        if not self.enabled:
-            return "none"
-        return "workspace" if self.workspace_enabled else "read_only"
+        """Human-readable effective mode kept for diagnostics/backward compatibility."""
+        if self.workspace and self.read_only:
+            return "workspace_read_only"
+        if self.workspace:
+            return "workspace"
+        if self.read_only:
+            return "read_only"
+        if self.masking or self.deny_read or self.deny_write:
+            return "filtered"
+        return "none"
 
 
 @dataclass(slots=True)
@@ -138,19 +154,46 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
     ]
 
     legacy_mode = str(sandbox_raw.get("mode", "none"))
-    enabled = bool(sandbox_raw.get("enabled", legacy_mode != "none"))
-    workspace_enabled = bool(
+    legacy_enabled = bool(sandbox_raw.get("enabled", legacy_mode != "none"))
+    legacy_workspace_enabled = bool(
         sandbox_raw.get("workspace_enabled", legacy_mode == "workspace")
     )
-    masking_enabled = bool(
-        sandbox_raw.get("masking_enabled", bool(credential_files))
-    )
+
+    raw_workspace = sandbox_raw.get("workspace", False)
+    if isinstance(raw_workspace, bool):
+        workspace = raw_workspace
+        legacy_workspace_path = ""
+    else:
+        legacy_workspace_path = str(raw_workspace)
+        workspace = legacy_workspace_enabled if legacy_enabled else False
+
+    if "read_only" in sandbox_raw:
+        read_only = bool(sandbox_raw.get("read_only"))
+    else:
+        read_only = (
+            legacy_enabled
+            and not workspace
+            and legacy_mode != "none"
+        )
+
+    if "workspace" not in sandbox_raw or not isinstance(raw_workspace, bool):
+        workspace = legacy_workspace_enabled if legacy_enabled else False
+
+    if "masking" in sandbox_raw:
+        masking = bool(sandbox_raw.get("masking"))
+    else:
+        masking = (
+            bool(sandbox_raw.get("masking_enabled", bool(credential_files)))
+            and legacy_enabled
+        )
 
     sandbox = SandboxSettings(
-        enabled=enabled,
-        workspace_enabled=workspace_enabled,
-        workspace=str(sandbox_raw.get("workspace", "")),
-        masking_enabled=masking_enabled,
+        read_only=read_only,
+        workspace=workspace,
+        workspace_path=str(
+            sandbox_raw.get("workspace_path", legacy_workspace_path)
+        ),
+        masking=masking,
         deny_read=[str(value) for value in sandbox_raw.get("deny_read", [])],
         deny_write=[str(value) for value in sandbox_raw.get("deny_write", [])],
         credential_files=credential_files,
@@ -239,10 +282,10 @@ def write_config(config: AppConfig, path: Path | str = DEFAULT_CONFIG_PATH) -> P
             f"source_bashrc = {'true' if config.terminal.source_bashrc else 'false'}",
             "",
             "[sandbox]",
-            f"enabled = {'true' if config.terminal.sandbox.enabled else 'false'}",
-            f"workspace_enabled = {'true' if config.terminal.sandbox.workspace_enabled else 'false'}",
-            f"workspace = {_toml_string(config.terminal.sandbox.workspace)}",
-            f"masking_enabled = {'true' if config.terminal.sandbox.masking_enabled else 'false'}",
+            f"read_only = {'true' if config.terminal.sandbox.read_only else 'false'}",
+            f"workspace = {'true' if config.terminal.sandbox.workspace else 'false'}",
+            f"workspace_path = {_toml_string(config.terminal.sandbox.workspace_path)}",
+            f"masking = {'true' if config.terminal.sandbox.masking else 'false'}",
             f"deny_read = {json.dumps(config.terminal.sandbox.deny_read, ensure_ascii=False)}",
             f"deny_write = {json.dumps(config.terminal.sandbox.deny_write, ensure_ascii=False)}",
             "",
@@ -294,10 +337,10 @@ def _validate_terminal(settings: TerminalSettings) -> None:
 
 
 def _validate_sandbox(settings: SandboxSettings) -> None:
-    if settings.workspace_enabled and settings.workspace:
-        workspace = Path(settings.workspace).expanduser()
-        if not workspace.is_absolute():
-            raise ValueError("sandbox.workspace must be an absolute path")
+    if settings.workspace and settings.workspace_path:
+        workspace_path = Path(settings.workspace_path).expanduser()
+        if not workspace_path.is_absolute():
+            raise ValueError("sandbox.workspace_path must be an absolute path")
     for name, values in (
         ("sandbox.deny_read", settings.deny_read),
         ("sandbox.deny_write", settings.deny_write),
