@@ -505,301 +505,60 @@ nano notes.txt
 
 명령마다 새로운 shell을 만드는 구조가 아닙니다.
 
-### TUI 프로그램
+## 제어 명령
 
-Codex 같은 일부 TUI는 붙여넣어진 문자열과 실제 Enter key press를 구분합니다.
+전체 제어 프로토콜은 별도 문서에 모아두었습니다.
 
-예를 들어 문자열은 Codex 입력칸에 들어갔지만 submit되지 않은 경우:
+- **[제어 명령 전체 레퍼런스](./CONTROL_COMMANDS.ko.md)** — Input 명령, PTY key/alias, Ctrl 입력, raw escape, resize 규칙, Playwright browser 명령, observation 규칙, 로컬 `t4g` CLI까지 전부 설명합니다.
+- [English Control Command Reference](./CONTROL_COMMANDS.md)
+
+기본 제어 흐름은 다음처럼 단순하게 유지합니다.
 
 ```text
-> :k ENTER
+현재 Terminal / Browser Status 관찰
+→ Input에 action 하나 작성
+→ Input 초기화 대기
+→ 새 상태 관찰
+→ 다음 action
 ```
 
-를 별도로 보내 실제 Enter key를 전달할 수 있습니다.
+예:
 
-같은 방식으로 editor나 다른 interactive program도 조작할 수 있습니다.
+```text
+> git status
 
----
+> :k ENTER
 
-## Browser + Vision
+> :c C
 
-daemon은 하나의 **지속형 Playwright Chromium context/page**를 유지합니다. 첫 `:b ...` 명령에서 브라우저를 지연 시작하고 daemon이 종료·재시작될 때까지 같은 세션을 사용하므로 cookie, 로그인 상태, local/session storage, navigation history, focus, 페이지 상태를 browser action 사이에 계속 유지할 수 있습니다.
+> :b goto https://example.com
 
-모든 정상 browser action은 `settle_ms`(기본 350ms)만큼 기다린 뒤 새로운 observation을 생성합니다.
+> :b shot
+
+```
+
+PTY는 지속형이므로 cwd, 환경변수, REPL, TUI 상태가 action 사이에 유지됩니다.
+
+### Browser + Vision 개요
+
+daemon은 하나의 persistent Playwright Chromium context/page도 유지합니다. cookie, 로그인 상태, local/session storage, focus, browser history 등이 browser action 사이에 유지될 수 있습니다.
+
+각 정상 browser action은 새로운 observation을 게시합니다.
 
 ```text
 Browser Status
-  status
-  observation_id
-  url / title
-  viewport / scroll
-  cursor
-  vision
+  status / observation_id / url / title
+  viewport / scroll / cursor
   vision_page_url
-  created_at
 
 Browser Screenshot
   최신 viewport PNG
 
 Browser Vision Payload
-  observation_id + 압축된 viewport JPEG base64
-  별도 child page에 저장
+  압축 JPEG + 동일 observation_id
 ```
 
-일반적인 상태 흐름:
-
-```text
-idle → running → ready
-               ↘ failed
-```
-
-- `idle`: 아직 Chromium을 사용하지 않은 상태입니다.
-- `running`: daemon이 browser command를 받아 실행 중입니다.
-- `ready`: command가 완료되고 **새 observation**까지 게시된 상태입니다.
-- `failed`: command 실행이 실패했습니다. 다음 action 전에 `error`를 확인해야 합니다.
-
-### Browser 명령
-
-| 동작 | 명령 | 설명 |
-| --- | --- | --- |
-| 이동 | `:b goto <url>` | `:b open <url>`도 동일합니다. `domcontentloaded`까지 대기합니다. |
-| 새 observation | `:b shot` | 상호작용 없이 현재 viewport/state를 다시 캡처합니다. |
-| 마우스 이동 / hover | `:b move <observation_id> <x> <y>` | 최신 observation ID가 필요합니다. |
-| 클릭 | `:b click <observation_id> <x> <y>` | 최신 observation ID가 필요합니다. |
-| 드래그 | `:b drag <observation_id> <x1> <y1> <x2> <y2>` | 중간 step을 거쳐 이동한 뒤 목적지에서 release합니다. |
-| 스크롤 | `:b scroll <dx> <dy>` | mouse wheel delta입니다. 양수 `dy`는 아래, 음수는 위로 스크롤합니다. |
-| 문자열 입력 | `:b type <text>` | 현재 focus된 element에 문자열만 입력합니다. **Enter는 누르지 않습니다.** |
-| 키 입력 | `:b key <key>` | Playwright `keyboard.press()`에 전달됩니다. 예: `Enter`, `Tab`, `Escape`, `ArrowDown`, `Control+A`, `Shift+Tab`. |
-| 뒤로 가기 | `:b back` | browser history back 후 `domcontentloaded`까지 대기합니다. |
-| 새로고침 | `:b reload` | 현재 페이지 reload 후 `domcontentloaded`까지 대기합니다. |
-
-시작 예:
-
-```text
-> :b goto https://example.com
-```
-
-### Observation 기반 제어 순서
-
-GPT가 브라우저를 안정적으로 조작하려면 screenshot을 변경 불가능한 snapshot처럼 취급합니다.
-
-```text
-1. Browser Status를 읽고 status: ready인지 확인
-2. observation_id, viewport, scroll, URL 기록
-3. 동일 observation_id의 Browser Screenshot 또는 Vision Payload 확인
-4. action 하나만 결정
-5. Input으로 action 제출
-6. Input이 초기화되고 Browser Status가 ready가 될 때까지 대기
-7. 이전 observation_id를 버리고 1번부터 반복
-```
-
-좌표 action인 `move`, `click`, `drag`는 반드시 현재 `observation_id`를 요구합니다.
-
-```text
-> :b click obs_20261001T173408Z_0001 640 418
-```
-
-페이지가 바뀌어 해당 ID가 최신이 아니면 daemon은 잘못된 화면에 좌표를 적용하지 않고:
-
-```text
-STALE_OBSERVATION
-```
-
-으로 거부합니다. ID를 추측해서 같은 좌표를 재시도하지 말고 Browser Status와 screenshot을 다시 읽어야 합니다.
-
-`scroll`, `type`, `key`, navigation, reload는 observation ID를 인자로 받지 않지만, 성공할 때마다 역시 새 observation이 만들어집니다. 다음 동작 전에 반드시 갱신을 기다립니다.
-
-### 좌표, viewport, scroll
-
-마우스 좌표는 document 전체 좌표가 아니라 **viewport 기준 CSS pixel**입니다. 기본 `1280x720`이라면:
-
-```text
-왼쪽 위     = 0,0
-오른쪽 아래 = 1280,720
-```
-
-설정된 viewport 밖 좌표는 거부됩니다. screenshot도 viewport만 캡처하므로 화면 밖 element는 먼저 scroll해야 합니다.
-
-예:
-
-```text
-> :b scroll 0 600
-# ready가 된 뒤 새 screenshot과 새 observation_id 확인
-> :b click <new_observation_id> 920 640
-```
-
-`Browser Status.scroll`에는 현재 `window.scrollX,window.scrollY`가 기록됩니다. 다만 click 좌표는 계속 **현재 보이는 viewport 기준**입니다.
-
-### Focus, 문자열 입력, 키보드
-
-`:b type`은 현재 keyboard focus가 잡힌 element에 입력합니다. 따라서 일반적인 form 조작은 다음 순서입니다.
-
-```text
-# 현재 observation 확인
-> :b click <obs_id> 420 310
-# 새 observation 대기
-> :b type user@example.com
-# 다시 대기
-> :b key Tab
-# 다시 대기
-> :b type secret
-> :b key Enter
-```
-
-한 observation의 좌표와 다른 observation의 screenshot을 섞어서 사용하면 안 됩니다. hover로 메뉴가 열리는 UI라면 `:b move` 후 새 screenshot을 확인하고, **새 observation ID**로 click합니다.
-
-`show_cursor_overlay = true`이면 마지막 mouse 위치가 이후 screenshot에 작은 marker로 표시됩니다. 마지막 move/click/drag 위치를 확인하는 데 사용할 수 있습니다.
-
-### Browser Screenshot과 Vision Payload
-
-두 이미지는 같은 viewport를 표현하지만 용도가 다릅니다.
-
-- **Browser Screenshot**: control page에 직접 표시되는 full-resolution PNG. 사람이 확인하기 좋습니다.
-- **Browser Vision Payload**: GPT의 image reasoning을 위해 Vision child page에 저장되는 압축 JPEG base64입니다.
-- Vision payload에도 자체 `observation_id`가 있으므로 Browser Status와 일치하는지 확인한 뒤 좌표를 판단합니다.
-
-SPA나 비동기 렌더링으로 일반 settle 시간 이후 화면이 바뀌었다면:
-
-```text
-> :b shot
-```
-
-으로 상호작용 없이 현재 상태를 다시 캡처하면 됩니다.
-
-### 실패 처리
-
-Browser Status가 `failed`이면:
-
-1. `command`, `error` 확인
-2. 이전 screenshot 기준 좌표 action 중단
-3. 현재 페이지 상태가 불확실하면 `:b shot` 실행
-4. 새로운 `status: ready` observation이 생긴 뒤 계속 진행
-
-대표적인 경우:
-
-- `STALE_OBSERVATION` → Browser Status/Screenshot을 다시 읽고 새 ID 사용
-- `Coordinate (...) is outside viewport` → scroll하거나 viewport 내부 좌표 사용
-- Playwright/Chromium 없음 → `playwright install chromium`
-- Vision payload가 너무 큼 → `browser.width` / `browser.height`를 줄이거나 `vision_max_base64_chars` 조정
-- **srt sandbox 내부에서 실행한 local server**는 Playwright browser가 sandbox 밖에서 실행되므로 직접 접근할 수 없음
-
-### 현재 Browser 제어 범위
-
-현재 Notion command surface는 **하나의 persistent page**를 viewport mouse/keyboard 방식으로 조작합니다. CSS selector/DOM query 기반 command, popup/new tab 자동 전환, file chooser/upload command, download 관리는 아직 제공하지 않습니다. 사이트가 별도 tab/window를 열어도 그 페이지가 자동으로 제어 대상으로 전환되지는 않습니다.
-
-Playwright browser는 PTY process와 독립적으로 실행됩니다. 따라서 SRT PTY sandbox를 켜도 Playwright 자체가 그 sandbox 내부로 들어가는 것은 아닙니다.
-
-### Browser 설정
-
-```toml
-[browser]
-width = 1280
-height = 720
-headless = true
-timeout_ms = 15000
-settle_ms = 350
-show_cursor_overlay = true
-vision_enabled = true
-vision_quality = 35
-vision_max_base64_chars = 160000
-```
-
-`timeout_ms`는 Playwright의 기본 action/navigation timeout이고, `settle_ms`는 정상 action 완료 후 observation을 캡처하기 전 대기 시간입니다.
-
----
-
-## 입력 방식
-
-일반 문자열은 **빈 줄로 끝날 때** 실행됩니다.
-
-Notion에서 명령을 입력한 뒤 Enter를 두 번 누르면 됩니다.
-
-```text
-> pwd
-
-```
-
-실행 후 Input은 다시 다음 상태로 초기화됩니다.
-
-```text
-> 
-```
-
-### 제어 명령
-
-| 동작 | 긴 명령 | 축약형 | 예시 |
-| --- | --- | --- | --- |
-| 특수키 | `:key NAME` | `:k NAME` | `:k ENTER` |
-| Ctrl | `:ctrl KEY` | `:c KEY` | `:c O` |
-| Raw input | `:send TEXT` | `:s TEXT` | `:s \\e:wq\\r` |
-| Resize | `:resize COLSxROWS` | `:rs COLSxROWS` | `:rs 140x50` |
-
-Key alias:
-
-```text
-ENTER      RETURN RET ENT
-BACKSPACE  BS BKSP
-ESC        ESCAPE
-DELETE     DEL
-INSERT     INS
-PAGEUP     PGUP
-PAGEDOWN   PGDN
-```
-
-추가 지원 키:
-
-```text
-UP DOWN LEFT RIGHT
-HOME END
-TAB
-F1 ... F12
-```
-
-즉시 처리되는 control token:
-
-```text
-^C   실행 중단
-^D   EOF
-^Z   suspend
-^L   clear / redraw
-^\   quit signal
-```
-
----
-
-## TUI 사용 예시
-
-### Codex / Claude Code
-
-TUI 입력칸에 문자열은 들어갔지만 submit되지 않은 경우:
-
-```text
-> :k ENTER
-```
-
-입력 수정:
-
-```text
-> :k BS
-> :k LEFT
-> :k RIGHT
-```
-
-### nano
-
-```text
-> :c O        # 저장
-> :k ENTER    # 파일명 확인
-> :c X        # 종료
-> :c W        # 검색
-```
-
-### vim
-
-```text
-> :s \e:wq\r   # 저장 후 종료
-> :s \e:q!\r   # 저장하지 않고 종료
-```
+좌표 action은 최신 `observation_id`를 요구하므로 화면이 바뀐 뒤 이전 screenshot 좌표를 잘못 적용하는 것을 막습니다. Browser 명령의 전체 문법, 좌표 규칙, focus/keyboard 동작, hover 흐름, 실패 복구, 현재 제한사항은 **[CONTROL_COMMANDS.ko.md](./CONTROL_COMMANDS.ko.md)**에 정리했습니다.
 
 ---
 
