@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import platform
+import shutil
 import sys
 from pathlib import Path
 
@@ -123,6 +124,14 @@ def doctor(config_path: Path) -> int:
     checks.append((Path(config.terminal.shell).exists(), f"Shell exists: {config.terminal.shell}"))
     checks.append((Path(config.terminal.cwd).expanduser().is_dir(), f"Working directory exists: {config.terminal.cwd}"))
     checks.append((os.access(Path(config.terminal.cwd).expanduser(), os.R_OK | os.X_OK), "Working directory is accessible"))
+
+    sandbox = config.terminal.sandbox
+    if sandbox.mode != "none":
+        bwrap = shutil.which("bwrap")
+        checks.append((bwrap is not None, f"bubblewrap is installed: {bwrap or 'not found'}"))
+        if sandbox.mode == "workspace":
+            workspace = Path(sandbox.workspace or config.terminal.cwd).expanduser()
+            checks.append((workspace.is_dir(), f"Sandbox workspace exists: {workspace}"))
     try:
         import playwright  # noqa: F401
         checks.append((True, "Playwright Python package is installed"))
