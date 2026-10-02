@@ -1,7 +1,7 @@
 import pytest
 
-from app.browser import BrowserController, BrowserError, _is_navigation_race, parse_browser_command
-from app.config import BrowserSettings
+from terminal4gptweb.browser import BrowserController, BrowserError, _is_navigation_race, parse_browser_command
+from terminal4gptweb.config import BrowserSettings
 
 
 def test_parse_browser_command():
