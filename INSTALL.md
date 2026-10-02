@@ -301,7 +301,6 @@ On the generated Notion control page, put this in Input and press Enter once:
 
 ```text
 pwd
-
 ```
 
 The Terminal block should update and Input should return to an empty block.
@@ -310,7 +309,6 @@ Then try:
 
 ```text
 whoami
-
 ```
 
 Browser smoke test:

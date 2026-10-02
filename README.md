@@ -261,7 +261,6 @@ In the generated Notion Input block:
 
 ```text
 pwd
-
 ```
 
 Press Enter once to submit. Terminal should update and Input should reset to an empty block.
@@ -534,7 +533,6 @@ git status
 :b goto https://example.com
 
 :b shot
-
 ```
 
 Control commands such as `:k ENTER` are **separate Input actions**, not inline syntax appended to ordinary text. For example, send text to Codex first, then submit `:k ENTER` alone in the next Input action if a real Enter key is needed.

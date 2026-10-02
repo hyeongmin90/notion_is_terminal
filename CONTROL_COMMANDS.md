@@ -69,7 +69,6 @@ Syntax:
 
 ```text
 <shell command>
-
 ```
 
 Examples:
@@ -82,7 +81,6 @@ git status
 cd ~/project
 
 python3
-
 ```
 
 Terminal4GPTWeb uses one persistent PTY rather than spawning a new shell for every command, so cwd, environment, foreground processes, REPLs and TUI state persist.
@@ -134,7 +132,6 @@ Examples:
 :ctrl X
 
 :ctrl BACKSLASH
-
 ```
 
 Supported keys are the ASCII control range:
@@ -226,7 +223,6 @@ Examples:
 :k ESC
 
 :k F5
-
 ```
 
 This is especially useful for TUIs that distinguish pasted text from a real Enter key.
@@ -268,7 +264,6 @@ Examples:
 
 # ESC
 :s \e
-
 ```
 
 Unknown escape spellings preserve the backslash rather than silently dropping it.
@@ -292,7 +287,6 @@ Examples:
 :rs 140x50
 
 :resize 100x30
-
 ```
 
 Allowed range:
@@ -330,7 +324,6 @@ Example:
 
 ```text
 :b goto https://example.com
-
 ```
 
 Current browser subcommands:
@@ -368,7 +361,6 @@ Example:
 
 ```text
 :b goto https://example.com
-
 ```
 
 The controller calls Playwright `page.goto(..., wait_until="domcontentloaded")`, waits the configured `settle_ms`, then publishes a fresh observation.
@@ -408,7 +400,6 @@ Example:
 
 ```text
 :b move obs_20261002T040000Z_0003 620 240
-
 ```
 
 The supplied observation ID must be current.
@@ -429,7 +420,6 @@ Example:
 
 ```text
 :b click obs_20261002T040000Z_0004 640 418
-
 ```
 
 Coordinates are **viewport-relative CSS pixels**, not document coordinates.
@@ -478,7 +468,6 @@ Examples:
 :b scroll 0 600
 :b scroll 0 -600
 :b scroll 400 0
-
 ```
 
 - positive `dy`: down;
@@ -502,7 +491,6 @@ Examples:
 :b type user@example.com
 
 :b type hello world
-
 ```
 
 This uses Playwright `keyboard.insert_text()`.
@@ -949,7 +937,7 @@ Default:
 
 | Function | Command |
 | --- | --- |
-| shell line | `<command>` + blank line |
+| shell line | `<command>` + single newline |
 | Ctrl | `:ctrl KEY`, `:c KEY` |
 | special key | `:key NAME`, `:k NAME` |
 | raw input | `:send TEXT`, `:s TEXT` |

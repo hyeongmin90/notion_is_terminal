@@ -590,16 +590,12 @@ ChatGPT가 Terminal4GPTWeb 페이지를 찾지 못하면:
 
 ```text
 pwd
-
 ```
 
 처럼 입력하고 Enter를 한 번 누르면 제출됩니다.
 
 정상이라면 Terminal이 갱신되고 Input은 다시 빈 블록으로 초기화됩니다.
 
-```text
->
-```
 
 로 초기화됩니다.
 
@@ -607,7 +603,6 @@ pwd
 
 ```text
 whoami
-
 ```
 
 를 테스트합니다.

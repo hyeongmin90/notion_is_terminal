@@ -265,7 +265,6 @@ Notion Input:
 
 ```text
 pwd
-
 ```
 
 명령 뒤 Enter를 한 번 눌러 제출합니다.
@@ -542,7 +541,6 @@ git status
 :b goto https://example.com
 
 :b shot
-
 ```
 
 `:k ENTER` 같은 제어 명령은 일반 문자열 뒤에 붙이는 문법이 아니라 **하나의 독립된 Input action**입니다. 예를 들어 Codex에 문자열을 보낸 뒤 Enter가 필요하면 문자열 제출이 끝난 다음 `:k ENTER`만 별도로 제출합니다.
