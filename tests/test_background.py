@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-import app.background as background
+import terminal4gptweb.background as background
 
 
 def test_tail_lines(tmp_path: Path):
@@ -22,7 +22,7 @@ def test_instance_lock_rejects_second_owner(tmp_path: Path, monkeypatch):
 
 
 def test_cli_daemon_command_parses():
-    from app.cli import build_parser
+    from terminal4gptweb.cli import build_parser
 
     args = build_parser().parse_args(["daemon", "logs", "-n", "50", "-f"])
     assert args.command == "daemon"
