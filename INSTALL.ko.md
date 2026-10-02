@@ -276,25 +276,28 @@ PTY가 시작할 기본 디렉터리입니다.
 /home/user/project
 ```
 
-### PTY sandbox
+### PTY security
+
+Wizard는 preset 대신 기능을 각각 묻습니다.
 
 ```text
-PTY sandbox
-
-  1. None
-  2. Read only
-  3. Workspace
+Read-only filesystem [y/N]:
+Restrict filesystem to one workspace [y/N]:
+Workspace path [...] :        # workspace=true일 때만
+Enable credential file masking [y/N]:
 ```
 
-의미:
+조합:
 
-- **None**: daemon 사용자 권한 그대로 실행
-- **Read only**: host filesystem은 읽을 수 있지만 수정할 수 없음. `/tmp`는 sandbox 전용 writable tmpfs
-- **Workspace**: 지정한 workspace만 RW로 노출. 다른 사용자 project/home 데이터는 노출하지 않음
+- `read_only=false, workspace=false`: 일반 PTY
+- `read_only=true, workspace=false`: host 전체 read-only
+- `read_only=false, workspace=true`: 지정 workspace만 RW
+- `read_only=true, workspace=true`: 지정 workspace만 보이고 workspace 자체도 read-only
+- `masking=true`: credential file 규칙 적용. read_only/workspace 없이 단독 사용도 가능
 
 추가 `deny_read` / `deny_write` 경로도 입력할 수 있습니다.
 
-Credential masking은 현재 wizard에서 파일별 규칙까지 만들지 않습니다. 초기화 후 config에서 명시적으로 설정합니다.
+Credential masking의 파일별 규칙은 초기화 후 config에서 명시적으로 설정합니다.
 
 ### 나머지 설정
 
@@ -359,21 +362,26 @@ deny_read = []
 deny_write = [".git"]
 ```
 
-### Sandbox 전체 OFF
+### 모든 filesystem 제한 OFF
 
 ```toml
 [sandbox]
-enabled = false
+read_only = false
+workspace = false
+masking = false
+deny_read = []
+deny_write = []
 ```
 
-이 경우 workspace/masking 설정이 남아 있어도 PTY에는 적용되지 않습니다.
+이 상태에서는 bubblewrap을 사용하지 않고 기존 PTY처럼 실행됩니다.
 
 ### Read-only
 
 ```toml
 [sandbox]
-enabled = true
+read_only = true
 workspace = false
+masking = false
 ```
 
 효과:
@@ -386,9 +394,10 @@ workspace = false
 
 ```toml
 [sandbox]
-enabled = true
+read_only = false
 workspace = true
 workspace_path = "/home/user/project"
+masking = false
 ```
 
 효과:
@@ -398,6 +407,18 @@ workspace_path = "/home/user/project"
 - 실행에 필요한 system path는 RO
 - 다른 home/project는 노출하지 않음
 - sandbox 전용 HOME과 `/tmp` 사용
+
+### Workspace + Read-only
+
+```toml
+[sandbox]
+read_only = true
+workspace = true
+workspace_path = "/home/user/project"
+masking = false
+```
+
+이 경우 workspace만 노출되며 `/workspace` 자체도 read-only입니다.
 
 ### Credential masking OFF
 
