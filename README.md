@@ -23,7 +23,7 @@ In short:
 Notion is the shared control surface. The local daemon owns the real terminal.
 
 > [!CAUTION]
-> PTY sandboxing is **optional**. With `sandbox.enabled = false`, anything written to Input runs with the permissions of the Linux user running the daemon. Workspace/read-only isolation and credential-file masking can be enabled in config, but they do not replace normal secret-management practices.
+> PTY sandboxing is **optional**. With `read_only = false, workspace = false, masking = false`, anything written to Input runs with the permissions of the Linux user running the daemon. Workspace/read-only isolation and credential-file masking can be enabled in config, but they do not replace normal secret-management practices.
 
 ---
 
@@ -718,10 +718,10 @@ show_cursor = true
 source_bashrc = true
 
 [sandbox]
-enabled = true
-workspace_enabled = true
-workspace = "/home/user/project"
-masking_enabled = true
+read_only = false
+workspace = true
+workspace_path = "/home/user/project"
+masking = true
 deny_read = []
 deny_write = [".git"]
 
@@ -746,11 +746,11 @@ The security features are explicit switches. You can leave policy entries in the
 
 | Setting | Effect |
 | --- | --- |
-| `sandbox.enabled = false` | Direct, unrestricted PTY. Other sandbox settings are inactive. |
-| `enabled = true`, `workspace_enabled = false` | Read-only host filesystem; private writable `/tmp`. |
-| `enabled = true`, `workspace_enabled = true` | Only the configured workspace is exposed RW as `/workspace`; user data outside it is hidden. |
-| `masking_enabled = false` | Keep credential rules in config but do not apply them. |
-| `masking_enabled = true` | Apply configured credential file mask/deny policies. |
+| `read_only = false, workspace = false, masking = false` | Direct, unrestricted PTY. Other sandbox settings are inactive. |
+| `read_only = true`, `workspace = false` | Read-only host filesystem; private writable `/tmp`. |
+| `read_only = false`, `workspace = true` | Only the configured workspace is exposed RW as `/workspace`; user data outside it is hidden. |
+| `masking = false` | Keep credential rules in config but do not apply them. |
+| `masking = true` | Apply configured credential file mask/deny policies. |
 
 Credential `extract` regexes must contain exactly one capture group. Only capture group 1 is replaced with a per-PTY sentinel.
 
@@ -790,16 +790,17 @@ Terminal4GPTWeb supports optional bubblewrap-based PTY isolation.
 Three effective modes exist:
 
 ```text
-sandbox.enabled = false
+read_only = false, workspace = false, masking = false
   → unrestricted PTY as the daemon user
 
-sandbox.enabled = true
-workspace_enabled = false
+read_only = true, workspace = false
   → read-only host view + private writable /tmp
 
-sandbox.enabled = true
-workspace_enabled = true
+read_only = false, workspace = true
   → workspace-only user data + read-only system paths
+
+read_only = true, workspace = true
+  → workspace-only user data, and the workspace itself is read-only
 ```
 
 Additional controls:
