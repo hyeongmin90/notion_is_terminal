@@ -1,6 +1,6 @@
 # Terminal4GPTWeb installation and first-time setup
 
-[한국어](./INSTALL.ko.md) · [Main README](./README.md)
+[한국어](./INSTALL.ko.md) · [Main README](./README.md) · [Control Command Reference](./CONTROL_COMMANDS.md)
 
 This guide walks through a clean installation from an empty machine/workspace to the first GPT Web command.
 
