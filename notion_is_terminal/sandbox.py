@@ -279,7 +279,7 @@ def _credential_rule(
             rule["onExtractNoMatch"] = item.on_extract_no_match
             if mask_duplicates:
                 rule["maskDuplicates"] = True
-        if item.inject_hosts:
+        if item.inject_hosts is not None:
             rule["injectHosts"] = list(item.inject_hosts)
     return rule
 
