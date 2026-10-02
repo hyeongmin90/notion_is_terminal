@@ -1,4 +1,4 @@
-from app.notion import (
+from terminal4gptweb.notion import (
     MAX_RICH_TEXT_CHUNK,
     NotionClient,
     NotionError,
