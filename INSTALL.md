@@ -248,7 +248,7 @@ mode = "mask"
 inject_hosts = ["api.github.com"]
 ```
 
-Inside the shell, masked values read as `fake_value_<uuid>`. srt replaces them with the real value only in HTTP(S) requests to the credential's `inject_hosts` (default: all allowed domains). The regex must have exactly one capture group; only capture group 1 is replaced. Masking requires `tls_terminate = true` (or the explicit `allow_plaintext_inject = true`).
+Inside the shell, masked values read as `fake_value_<uuid>`. srt replaces them with the real value only in HTTP(S) requests to the credential's `inject_hosts`; when the field is omitted, srt defaults it to all `allowed_domains`. Current srt rejects `inject_hosts = []` in mask mode, and Terminal4GPTWeb rejects it too instead of silently widening the scope. Use `mode = "deny"` when the credential must never be exposed or injected. The regex must have exactly one capture group; only capture group 1 is replaced. Masking requires `tls_terminate = true` (or the explicit `allow_plaintext_inject = true`).
 
 A server started inside the sandboxed terminal is not reachable from the Playwright browser, which runs outside the sandbox's network namespace.
 
