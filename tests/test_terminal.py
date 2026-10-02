@@ -22,24 +22,23 @@ def _settings(
     deny_write=None,
     credential_files=None,
 ):
-    workspace = tmp_path / "workspace"
-    workspace.mkdir(exist_ok=True)
-    enabled = mode != "none"
-    workspace_enabled = mode == "workspace"
+    workspace_path = tmp_path / "workspace"
+    workspace_path.mkdir(exist_ok=True)
+    read_only = mode in {"read_only", "workspace_read_only"}
+    workspace = mode in {"workspace", "workspace_read_only"}
     return TerminalSettings(
         shell="/bin/bash",
-        cwd=str(workspace),
+        cwd=str(workspace_path),
         sandbox=SandboxSettings(
-            enabled=enabled,
-            workspace_enabled=workspace_enabled,
-            workspace=str(workspace),
-            masking_enabled=bool(credential_files),
+            read_only=read_only,
+            workspace=workspace,
+            workspace_path=str(workspace_path),
+            masking=bool(credential_files),
             deny_read=list(deny_read or []),
             deny_write=list(deny_write or []),
             credential_files=list(credential_files or []),
         ),
-    ), workspace
-
+    ), workspace_path
 
 def test_none_mode_launches_shell_directly(tmp_path):
     settings, workspace = _settings(tmp_path, mode="none")
@@ -354,59 +353,101 @@ def test_build_launch_ro_binds_fake_over_real_path(tmp_path):
         store.close()
 
 
-def test_sandbox_enabled_false_bypasses_workspace_and_bwrap(tmp_path):
-    settings, workspace = _settings(tmp_path, mode="workspace")
-    settings.sandbox.enabled = False
+def test_all_flags_false_launches_shell_directly(tmp_path):
+    settings, workspace_path = _settings(tmp_path, mode="none")
 
     launch = build_sandbox_launch(
         settings,
-        cwd=workspace,
+        cwd=workspace_path,
         shell=Path("/bin/bash"),
         rcfile=None,
         bwrap_path="/usr/bin/bwrap",
     )
 
+    assert settings.sandbox.active is False
     assert settings.sandbox.mode == "none"
     assert launch.executable == "/bin/bash"
-    assert launch.cwd == str(workspace)
 
 
-def test_workspace_toggle_off_changes_effective_mode_to_read_only(tmp_path):
-    settings, workspace = _settings(tmp_path, mode="workspace")
-    settings.sandbox.workspace_enabled = False
+def test_read_only_and_workspace_mount_workspace_read_only(tmp_path):
+    settings, workspace_path = _settings(tmp_path, mode="workspace_read_only")
 
     launch = build_sandbox_launch(
         settings,
-        cwd=workspace,
+        cwd=workspace_path,
         shell=Path("/bin/bash"),
         rcfile=None,
         bwrap_path="/usr/bin/bwrap",
     )
 
-    assert settings.sandbox.mode == "read_only"
-    assert ["--ro-bind", "/", "/"] == launch.argv[3:6]
+    triples = list(zip(launch.argv, launch.argv[1:], launch.argv[2:]))
+    assert ("--ro-bind", str(workspace_path), "/workspace") in triples
+    assert settings.sandbox.mode == "workspace_read_only"
 
 
-def test_masking_toggle_off_leaves_credential_policy_inactive(tmp_path):
+def test_masking_only_activates_bwrap_without_read_only_or_workspace(tmp_path):
     entry = CredentialFileSettings(
         path=".env",
         mode="mask",
         extract=r"API_KEY=(\S+)",
     )
-    settings, workspace = _settings(
+    settings, workspace_path = _settings(
         tmp_path,
-        mode="workspace",
+        mode="none",
         credential_files=[entry],
     )
-    settings.sandbox.masking_enabled = False
-    (workspace / ".env").write_text("API_KEY=real-secret\n", encoding="utf-8")
+    settings.sandbox.masking = True
+    (workspace_path / ".env").write_text("API_KEY=real-secret\n", encoding="utf-8")
 
     registry = CredentialSentinelRegistry()
     store = CredentialMaskStore()
     try:
         binds, deny = prepare_credential_masks(
             settings,
-            cwd=workspace,
+            cwd=workspace_path,
+            registry=registry,
+            store=store,
+        )
+        launch = build_sandbox_launch(
+            settings,
+            cwd=workspace_path,
+            shell=Path("/bin/bash"),
+            rcfile=None,
+            bwrap_path="/usr/bin/bwrap",
+            masked_file_binds=binds,
+            credential_deny_read=deny,
+        )
+        assert launch.executable == "/usr/bin/bwrap"
+        assert ["--bind", "/", "/"] == launch.argv[3:6]
+        triples = list(zip(launch.argv, launch.argv[1:], launch.argv[2:]))
+        assert any(
+            item[0] == "--ro-bind" and item[2] == str(workspace_path / ".env")
+            for item in triples
+        )
+    finally:
+        store.close()
+
+
+def test_masking_false_leaves_credential_policy_inactive(tmp_path):
+    entry = CredentialFileSettings(
+        path=".env",
+        mode="mask",
+        extract=r"API_KEY=(\S+)",
+    )
+    settings, workspace_path = _settings(
+        tmp_path,
+        mode="workspace",
+        credential_files=[entry],
+    )
+    settings.sandbox.masking = False
+    (workspace_path / ".env").write_text("API_KEY=real-secret\n", encoding="utf-8")
+
+    registry = CredentialSentinelRegistry()
+    store = CredentialMaskStore()
+    try:
+        binds, deny = prepare_credential_masks(
+            settings,
+            cwd=workspace_path,
             registry=registry,
             store=store,
         )
@@ -418,26 +459,26 @@ def test_masking_toggle_off_leaves_credential_policy_inactive(tmp_path):
         store.close()
 
 
-def test_masking_toggle_on_applies_existing_credential_policy(tmp_path):
+def test_masking_true_applies_existing_credential_policy(tmp_path):
     entry = CredentialFileSettings(
         path=".env",
         mode="mask",
         extract=r"API_KEY=(\S+)",
     )
-    settings, workspace = _settings(
+    settings, workspace_path = _settings(
         tmp_path,
         mode="workspace",
         credential_files=[entry],
     )
-    settings.sandbox.masking_enabled = True
-    (workspace / ".env").write_text("API_KEY=real-secret\n", encoding="utf-8")
+    settings.sandbox.masking = True
+    (workspace_path / ".env").write_text("API_KEY=real-secret\n", encoding="utf-8")
 
     registry = CredentialSentinelRegistry()
     store = CredentialMaskStore()
     try:
         binds, deny = prepare_credential_masks(
             settings,
-            cwd=workspace,
+            cwd=workspace_path,
             registry=registry,
             store=store,
         )
@@ -446,3 +487,4 @@ def test_masking_toggle_on_applies_existing_credential_policy(tmp_path):
         assert "real-secret" not in binds[0].fake_path.read_text(encoding="utf-8")
     finally:
         store.close()
+
