@@ -13,6 +13,27 @@
 - Browser observation / Vision 사용 규칙
 - 로컬 `t4g` CLI 명령
 
+> [!IMPORTANT]
+> `:k ENTER`, `:c C`, `:b ...` 같은 제어 명령은 **반드시 하나의 독립된 Terminal4GPTWeb Input action으로 제출**해야 합니다.
+> 일반 문자열과 같은 Input에 이어 붙여 쓰는 문법이 아닙니다.
+>
+> 잘못된 예:
+>
+> ```text
+> > hello :k ENTER
+> ```
+>
+> 올바른 예:
+>
+> ```text
+> > hello
+>
+> # 위 입력 처리 후, 다음 Input action에서
+> > :k ENTER
+> ```
+>
+> 즉 Codex/Claude Code 같은 TUI에 문자열을 보낸 뒤 실제 Enter가 필요하면, 문자열 제출이 끝난 다음 `:k ENTER`를 **별도 action**으로 보냅니다.
+
 ---
 
 ## 1. Input 제출 규칙
@@ -247,14 +268,23 @@ key name은 대소문자를 구분하지 않으며 underscore도 제거됩니다
 
 Codex/Claude Code 같은 TUI는 pasted text와 실제 Enter key를 구분할 수 있습니다.
 
-문자열이 입력창에 들어갔지만 submit되지 않았다면:
+예를 들어 먼저 문자열을 하나의 Input action으로 보냅니다.
+
+```text
+> 질문 내용
+
+```
+
+문자열이 TUI 입력창에 들어갔지만 submit되지 않았다면, **같은 문자열 뒤에 `:k ENTER`를 붙이지 않습니다.**
+
+다음 Input action에서 `:k ENTER`만 따로 보냅니다.
 
 ```text
 > :k ENTER
 
 ```
 
-를 별도로 보냅니다.
+Terminal4GPTWeb이 이 두 제출을 각각 처리해서, 첫 번째는 문자열 입력으로 전달하고 두 번째는 실제 Enter key sequence로 전달합니다.
 
 ---
 
