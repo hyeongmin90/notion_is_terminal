@@ -1125,7 +1125,7 @@ t4g daemon --help
 기본 config:
 
 ```text
-~/.config/notion_is_terminal/config.toml
+~/.config/t4g/config.toml
 ```
 
 ---
