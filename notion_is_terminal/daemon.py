@@ -10,6 +10,7 @@ from .browser import BrowserController, BrowserError, BrowserObservation
 from .config import AppConfig, DEFAULT_CONFIG_PATH, write_config
 from .notion import NotionClient, NotionError
 from .protocol import InputAction, InputKind, extract_submission
+from .sandbox import SandboxUnavailableError
 from .terminal import PTYSession
 
 
@@ -42,7 +43,11 @@ class TerminalDaemon:
         previous_sigterm = signal.getsignal(signal.SIGTERM)
         signal.signal(signal.SIGTERM, lambda _signum, _frame: self.request_stop())
         try:
-            self.session.start()
+            try:
+                self.session.start()
+            except SandboxUnavailableError as exc:
+                self._report_startup_failure(f"[SANDBOX UNAVAILABLE]\n{exc}")
+                raise
             self.selector.register(self.session.fileno(), selectors.EVENT_READ)
 
             self._health_check()
@@ -113,6 +118,16 @@ class TerminalDaemon:
                 self.browser.close()
                 self.session.close()
                 self.notion.close()
+
+    def _report_startup_failure(self, text: str) -> None:
+        try:
+            self.notion.update_code_block(
+                self.config.notion.input_block_id,
+                text,
+                language="plain text",
+            )
+        except NotionError:
+            pass
 
     def _poll_input(self) -> None:
         try:

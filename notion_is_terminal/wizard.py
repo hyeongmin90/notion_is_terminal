@@ -16,6 +16,7 @@ from .config import (
     write_config,
 )
 from .notion import NotionClient, parse_page_id
+from .sandbox import SRT_INSTALL_HINT, sandbox_dependencies
 
 
 def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
@@ -138,41 +139,59 @@ def _enter_parent_page() -> str:
     return parse_page_id(value)
 
 
-def _prompt_sandbox(cwd: str) -> SandboxSettings:
-    print("\nPTY security")
-    print("Each feature can be enabled independently.")
-    read_only = _prompt_bool("Read-only filesystem", False)
-    workspace = _prompt_bool("Restrict filesystem to one workspace", False)
+DEFAULT_ALLOWED_DOMAINS = (
+    "github.com",
+    "*.github.com",
+    "*.githubusercontent.com",
+    "pypi.org",
+    "files.pythonhosted.org",
+    "registry.npmjs.org",
+)
 
-    workspace_path = ""
-    if workspace:
-        workspace_path = str(
+
+def _prompt_sandbox(cwd: str) -> SandboxSettings:
+    print("\nPTY sandbox (Anthropic Sandbox Runtime / srt)")
+    print("Disabled: the shell runs with your full user permissions and srt is not needed.")
+    enabled = _prompt_bool("Enable sandbox", False)
+    if not enabled:
+        return SandboxSettings(enabled=False)
+
+    sandbox = SandboxSettings(enabled=True)
+    missing = [name for name, path in sandbox_dependencies(sandbox) if path is None]
+    if missing:
+        print(f"  Warning: missing tools: {', '.join(missing)}.")
+        if "srt" in missing:
+            print(f"  Install srt with: {SRT_INSTALL_HINT}")
+        print("  The daemon will refuse to start until they are installed (see: t4g doctor).")
+
+    sandbox.read_only = _prompt_bool("Read-only filesystem", False)
+    sandbox.workspace = _prompt_bool("Restrict filesystem to one workspace", False)
+    if sandbox.workspace:
+        sandbox.workspace_path = str(
             Path(_prompt("Workspace path", cwd)).expanduser().resolve()
         )
-        if read_only:
+        if sandbox.read_only:
             print("  Workspace will be visible but read-only.")
         else:
             print("  Workspace will be visible read/write.")
 
-    masking = _prompt_bool("Enable credential file masking", False)
-    if masking:
-        print("  Add credential file rules in config.toml after setup.")
-
-    deny_read = _prompt_path_list(
+    sandbox.allow_write = _prompt_path_list(
+        "Extra writable paths (comma-separated, optional, e.g. ~/.cache)",
+    )
+    sandbox.deny_read = _prompt_path_list(
         "Deny read paths (comma-separated, optional)",
     )
-    deny_write = _prompt_path_list(
+    sandbox.deny_write = _prompt_path_list(
         "Deny write paths (comma-separated, optional)",
     )
-
-    return SandboxSettings(
-        read_only=read_only,
-        workspace=workspace,
-        workspace_path=workspace_path,
-        masking=masking,
-        deny_read=deny_read,
-        deny_write=deny_write,
+    domains = _prompt(
+        "Allowed network domains (comma-separated, '-' = no network)",
+        ",".join(DEFAULT_ALLOWED_DOMAINS),
     )
+    if domains.strip() != "-":
+        sandbox.allowed_domains = [part.strip() for part in domains.split(",") if part.strip()]
+    print("  Add credential masking rules ([[sandbox.credentials.*]]) in config.toml after setup.")
+    return sandbox
 
 
 def _prompt_bool(label: str, default: bool) -> bool:

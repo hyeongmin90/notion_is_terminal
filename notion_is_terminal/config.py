@@ -36,40 +36,56 @@ class CredentialFileSettings:
     extract: str = ""
     on_extract_no_match: str = "warn"
     mask_duplicates: bool = False
+    inject_hosts: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class CredentialEnvSettings:
+    name: str
+    mode: str = "mask"
+    extract: str = ""
+    on_extract_no_match: str = "warn"
+    inject_hosts: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
 class SandboxSettings:
+    """PTY sandbox policy, enforced by Anthropic Sandbox Runtime (srt).
+
+    When ``enabled`` is false the shell runs directly and srt is not needed.
+    """
+
+    enabled: bool = False
+    srt_path: str = ""
     read_only: bool = False
     workspace: bool = False
     workspace_path: str = ""
-    masking: bool = False
+    allow_write: list[str] = field(default_factory=list)
     deny_read: list[str] = field(default_factory=list)
     deny_write: list[str] = field(default_factory=list)
+    allowed_domains: list[str] = field(default_factory=list)
+    denied_domains: list[str] = field(default_factory=list)
+    tls_terminate: bool = False
+    allow_plaintext_inject: bool = False
     credential_files: list[CredentialFileSettings] = field(default_factory=list)
+    credential_env: list[CredentialEnvSettings] = field(default_factory=list)
 
     @property
     def active(self) -> bool:
-        return (
-            self.read_only
-            or self.workspace
-            or self.masking
-            or bool(self.deny_read)
-            or bool(self.deny_write)
-        )
+        return self.enabled
 
     @property
     def mode(self) -> str:
-        """Human-readable effective mode kept for diagnostics/backward compatibility."""
+        """Human-readable effective mode for diagnostics."""
+        if not self.enabled:
+            return "none"
         if self.workspace and self.read_only:
             return "workspace_read_only"
         if self.workspace:
             return "workspace"
         if self.read_only:
             return "read_only"
-        if self.masking or self.deny_read or self.deny_write:
-            return "filtered"
-        return "none"
+        return "host"
 
 
 @dataclass(slots=True)
@@ -140,64 +156,7 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         browser_vision_page_url=str(notion_raw.get("browser_vision_page_url", "")),
     )
 
-    credentials_raw = sandbox_raw.get("credentials", {})
-    credential_files = [
-        CredentialFileSettings(
-            path=str(item.get("path", "")),
-            mode=str(item.get("mode", "mask")),
-            extract=str(item.get("extract", "")),
-            on_extract_no_match=str(item.get("on_extract_no_match", "warn")),
-            mask_duplicates=bool(item.get("mask_duplicates", False)),
-        )
-        for item in credentials_raw.get("files", [])
-        if isinstance(item, dict)
-    ]
-
-    legacy_mode = str(sandbox_raw.get("mode", "none"))
-    legacy_enabled = bool(sandbox_raw.get("enabled", legacy_mode != "none"))
-    legacy_workspace_enabled = bool(
-        sandbox_raw.get("workspace_enabled", legacy_mode == "workspace")
-    )
-
-    raw_workspace = sandbox_raw.get("workspace", False)
-    if isinstance(raw_workspace, bool):
-        workspace = raw_workspace
-        legacy_workspace_path = ""
-    else:
-        legacy_workspace_path = str(raw_workspace)
-        workspace = legacy_workspace_enabled if legacy_enabled else False
-
-    if "read_only" in sandbox_raw:
-        read_only = bool(sandbox_raw.get("read_only"))
-    else:
-        read_only = (
-            legacy_enabled
-            and not workspace
-            and legacy_mode != "none"
-        )
-
-    if "workspace" not in sandbox_raw or not isinstance(raw_workspace, bool):
-        workspace = legacy_workspace_enabled if legacy_enabled else False
-
-    if "masking" in sandbox_raw:
-        masking = bool(sandbox_raw.get("masking"))
-    else:
-        masking = (
-            bool(sandbox_raw.get("masking_enabled", bool(credential_files)))
-            and legacy_enabled
-        )
-
-    sandbox = SandboxSettings(
-        read_only=read_only,
-        workspace=workspace,
-        workspace_path=str(
-            sandbox_raw.get("workspace_path", legacy_workspace_path)
-        ),
-        masking=masking,
-        deny_read=[str(value) for value in sandbox_raw.get("deny_read", [])],
-        deny_write=[str(value) for value in sandbox_raw.get("deny_write", [])],
-        credential_files=credential_files,
-    )
+    sandbox = _load_sandbox(sandbox_raw)
 
     terminal = TerminalSettings(
         shell=terminal_raw.get("shell", "/bin/bash"),
@@ -237,15 +196,27 @@ def write_config(config: AppConfig, path: Path | str = DEFAULT_CONFIG_PATH) -> P
     config_path = Path(path).expanduser()
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
+    sandbox = config.terminal.sandbox
     credential_lines: list[str] = []
-    for item in config.terminal.sandbox.credential_files:
+    for item in sandbox.credential_files:
         credential_lines.extend([
             "[[sandbox.credentials.files]]",
             f"path = {_toml_string(item.path)}",
             f"mode = {_toml_string(item.mode)}",
             f"extract = {_toml_string(item.extract)}",
             f"on_extract_no_match = {_toml_string(item.on_extract_no_match)}",
-            f"mask_duplicates = {'true' if item.mask_duplicates else 'false'}",
+            f"mask_duplicates = {_toml_bool(item.mask_duplicates)}",
+            f"inject_hosts = {_toml_list(item.inject_hosts)}",
+            "",
+        ])
+    for item in sandbox.credential_env:
+        credential_lines.extend([
+            "[[sandbox.credentials.env]]",
+            f"name = {_toml_string(item.name)}",
+            f"mode = {_toml_string(item.mode)}",
+            f"extract = {_toml_string(item.extract)}",
+            f"on_extract_no_match = {_toml_string(item.on_extract_no_match)}",
+            f"inject_hosts = {_toml_list(item.inject_hosts)}",
             "",
         ])
 
@@ -282,12 +253,18 @@ def write_config(config: AppConfig, path: Path | str = DEFAULT_CONFIG_PATH) -> P
             f"source_bashrc = {'true' if config.terminal.source_bashrc else 'false'}",
             "",
             "[sandbox]",
-            f"read_only = {'true' if config.terminal.sandbox.read_only else 'false'}",
-            f"workspace = {'true' if config.terminal.sandbox.workspace else 'false'}",
-            f"workspace_path = {_toml_string(config.terminal.sandbox.workspace_path)}",
-            f"masking = {'true' if config.terminal.sandbox.masking else 'false'}",
-            f"deny_read = {json.dumps(config.terminal.sandbox.deny_read, ensure_ascii=False)}",
-            f"deny_write = {json.dumps(config.terminal.sandbox.deny_write, ensure_ascii=False)}",
+            f"enabled = {_toml_bool(sandbox.enabled)}",
+            f"srt_path = {_toml_string(sandbox.srt_path)}",
+            f"read_only = {_toml_bool(sandbox.read_only)}",
+            f"workspace = {_toml_bool(sandbox.workspace)}",
+            f"workspace_path = {_toml_string(sandbox.workspace_path)}",
+            f"allow_write = {_toml_list(sandbox.allow_write)}",
+            f"deny_read = {_toml_list(sandbox.deny_read)}",
+            f"deny_write = {_toml_list(sandbox.deny_write)}",
+            f"allowed_domains = {_toml_list(sandbox.allowed_domains)}",
+            f"denied_domains = {_toml_list(sandbox.denied_domains)}",
+            f"tls_terminate = {_toml_bool(sandbox.tls_terminate)}",
+            f"allow_plaintext_inject = {_toml_bool(sandbox.allow_plaintext_inject)}",
             "",
             *credential_lines,
             "[browser]",
@@ -336,39 +313,163 @@ def _validate_terminal(settings: TerminalSettings) -> None:
         raise ValueError("terminal.health_check_interval must be >= 3.0 seconds")
 
 
+def _load_sandbox(sandbox_raw: dict) -> SandboxSettings:
+    credentials_raw = sandbox_raw.get("credentials", {})
+    credential_files = [
+        CredentialFileSettings(
+            path=str(item.get("path", "")),
+            mode=str(item.get("mode", "mask")),
+            extract=str(item.get("extract", "")),
+            on_extract_no_match=str(item.get("on_extract_no_match", "warn")),
+            mask_duplicates=bool(item.get("mask_duplicates", False)),
+            inject_hosts=_str_list(item.get("inject_hosts", [])),
+        )
+        for item in credentials_raw.get("files", [])
+        if isinstance(item, dict)
+    ]
+    credential_env = [
+        CredentialEnvSettings(
+            name=str(item.get("name", "")),
+            mode=str(item.get("mode", "mask")),
+            extract=str(item.get("extract", "")),
+            on_extract_no_match=str(item.get("on_extract_no_match", "warn")),
+            inject_hosts=_str_list(item.get("inject_hosts", [])),
+        )
+        for item in credentials_raw.get("env", [])
+        if isinstance(item, dict)
+    ]
+
+    # Older configs used `mode = "..."`, `workspace = "<path>"` and
+    # `workspace_enabled`; map them onto the explicit switches.
+    legacy_mode = str(sandbox_raw.get("mode", "none"))
+    raw_workspace = sandbox_raw.get("workspace", False)
+    if isinstance(raw_workspace, bool):
+        workspace = raw_workspace
+        legacy_workspace_path = ""
+    else:
+        legacy_workspace_path = str(raw_workspace)
+        workspace = bool(
+            sandbox_raw.get("workspace_enabled", legacy_mode == "workspace")
+        )
+
+    if "read_only" in sandbox_raw:
+        read_only = bool(sandbox_raw.get("read_only"))
+    else:
+        read_only = legacy_mode == "read_only"
+
+    deny_read = _str_list(sandbox_raw.get("deny_read", []))
+    deny_write = _str_list(sandbox_raw.get("deny_write", []))
+
+    if "enabled" in sandbox_raw:
+        enabled = bool(sandbox_raw.get("enabled"))
+    else:
+        # Configs written before `enabled` existed turned the sandbox on
+        # implicitly through any restriction switch; keep them protected.
+        enabled = bool(
+            read_only
+            or workspace
+            or sandbox_raw.get("masking", False)
+            or deny_read
+            or deny_write
+        )
+
+    return SandboxSettings(
+        enabled=enabled,
+        srt_path=str(sandbox_raw.get("srt_path", "")),
+        read_only=read_only,
+        workspace=workspace,
+        workspace_path=str(
+            sandbox_raw.get("workspace_path", legacy_workspace_path)
+        ),
+        allow_write=_str_list(sandbox_raw.get("allow_write", [])),
+        deny_read=deny_read,
+        deny_write=deny_write,
+        allowed_domains=_str_list(sandbox_raw.get("allowed_domains", [])),
+        denied_domains=_str_list(sandbox_raw.get("denied_domains", [])),
+        tls_terminate=bool(sandbox_raw.get("tls_terminate", False)),
+        allow_plaintext_inject=bool(sandbox_raw.get("allow_plaintext_inject", False)),
+        credential_files=credential_files,
+        credential_env=credential_env,
+    )
+
+
 def _validate_sandbox(settings: SandboxSettings) -> None:
     if settings.workspace and settings.workspace_path:
         workspace_path = Path(settings.workspace_path).expanduser()
         if not workspace_path.is_absolute():
             raise ValueError("sandbox.workspace_path must be an absolute path")
     for name, values in (
+        ("sandbox.allow_write", settings.allow_write),
         ("sandbox.deny_read", settings.deny_read),
         ("sandbox.deny_write", settings.deny_write),
     ):
         for value in values:
-            if not value or "\x00" in value or "\n" in value or "\r" in value:
+            if not _single_line(value):
                 raise ValueError(f"{name} entries must be non-empty single-line paths")
+    for name, values in (
+        ("sandbox.allowed_domains", settings.allowed_domains),
+        ("sandbox.denied_domains", settings.denied_domains),
+    ):
+        for value in values:
+            if not _single_line(value) or " " in value:
+                raise ValueError(f"{name} entries must be non-empty domain patterns")
 
     for item in settings.credential_files:
-        if not item.path or any(ch in item.path for ch in ("\x00", "\n", "\r")):
+        if not _single_line(item.path):
             raise ValueError("sandbox.credentials.files path must be a non-empty single-line path")
-        if item.mode not in {"mask", "deny"}:
-            raise ValueError("sandbox.credentials.files mode must be 'mask' or 'deny'")
-        if item.on_extract_no_match not in {"warn", "deny", "error"}:
+        _validate_credential_rule("sandbox.credentials.files", item.path, item)
+    for item in settings.credential_env:
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", item.name):
             raise ValueError(
-                "sandbox.credentials.files on_extract_no_match must be warn, deny, or error"
+                f"sandbox.credentials.env name must be an environment variable name: {item.name!r}"
             )
-        if item.extract:
-            try:
-                pattern = re.compile(item.extract)
-            except re.error as exc:
-                raise ValueError(
-                    f"Invalid sandbox credential extract regex for {item.path}: {exc}"
-                ) from exc
-            if pattern.groups != 1:
-                raise ValueError(
-                    f"sandbox credential extract regex must contain exactly one capture group: {item.path}"
-                )
+        _validate_credential_rule("sandbox.credentials.env", item.name, item)
+
+    has_mask = any(
+        item.mode == "mask"
+        for item in [*settings.credential_files, *settings.credential_env]
+    )
+    if has_mask and not settings.tls_terminate and not settings.allow_plaintext_inject:
+        raise ValueError(
+            "Credential masking needs sandbox.tls_terminate = true so srt can "
+            "inject the real value into HTTPS requests (or set "
+            "sandbox.allow_plaintext_inject = true to inject over plain HTTP only)."
+        )
+
+
+def _validate_credential_rule(
+    name: str,
+    label: str,
+    item: CredentialFileSettings | CredentialEnvSettings,
+) -> None:
+    if item.mode not in {"mask", "deny"}:
+        raise ValueError(f"{name} mode must be 'mask' or 'deny': {label}")
+    if item.on_extract_no_match not in {"warn", "deny", "error"}:
+        raise ValueError(f"{name} on_extract_no_match must be warn, deny, or error: {label}")
+    for host in item.inject_hosts:
+        if not _single_line(host) or " " in host:
+            raise ValueError(f"{name} inject_hosts entries must be domain patterns: {label}")
+    if item.extract:
+        try:
+            pattern = re.compile(item.extract)
+        except re.error as exc:
+            raise ValueError(
+                f"Invalid sandbox credential extract regex for {label}: {exc}"
+            ) from exc
+        if pattern.groups != 1:
+            raise ValueError(
+                f"sandbox credential extract regex must contain exactly one capture group: {label}"
+            )
+
+
+def _single_line(value: str) -> bool:
+    return bool(value) and not any(ch in value for ch in ("\x00", "\n", "\r"))
+
+
+def _str_list(values: object) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    return [str(value) for value in values]
 
 
 def _validate_browser(settings: BrowserSettings) -> None:
@@ -388,3 +489,11 @@ def _validate_browser(settings: BrowserSettings) -> None:
 
 def _toml_string(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
+
+
+def _toml_bool(value: bool) -> str:
+    return "true" if value else "false"
+
+
+def _toml_list(values: list[str]) -> str:
+    return json.dumps(values, ensure_ascii=False)

@@ -1,490 +1,354 @@
+import json
+import shlex
 from pathlib import Path
 
 import pytest
 
-from notion_is_terminal.config import CredentialFileSettings, SandboxSettings, TerminalSettings
-from notion_is_terminal.terminal import (
-    SANDBOX_WORKSPACE,
-    SENTINEL_PREFIX,
-    CredentialMaskStore,
-    CredentialSentinelRegistry,
-    build_sandbox_launch,
-    extract_and_substitute,
-    prepare_credential_masks,
+from notion_is_terminal import sandbox as sandbox_module
+from notion_is_terminal.config import (
+    CredentialEnvSettings,
+    CredentialFileSettings,
+    SandboxSettings,
+    TerminalSettings,
+)
+from notion_is_terminal.sandbox import (
+    SandboxUnavailableError,
+    build_shell_launch,
+    build_srt_settings,
+    descendant_pids,
 )
 
 
-def _settings(
-    tmp_path: Path,
-    *,
-    mode: str,
-    deny_read=None,
-    deny_write=None,
-    credential_files=None,
-):
-    workspace_path = tmp_path / "workspace"
-    workspace_path.mkdir(exist_ok=True)
-    read_only = mode in {"read_only", "workspace_read_only"}
-    workspace = mode in {"workspace", "workspace_read_only"}
-    return TerminalSettings(
-        shell="/bin/bash",
-        cwd=str(workspace_path),
-        sandbox=SandboxSettings(
-            read_only=read_only,
-            workspace=workspace,
-            workspace_path=str(workspace_path),
-            masking=bool(credential_files),
-            deny_read=list(deny_read or []),
-            deny_write=list(deny_write or []),
-            credential_files=list(credential_files or []),
+def _settings(tmp_path: Path, **sandbox_kwargs) -> tuple[TerminalSettings, Path]:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(exist_ok=True)
+    sandbox_kwargs.setdefault("workspace_path", str(workspace))
+    return (
+        TerminalSettings(
+            shell="/bin/bash",
+            cwd=str(workspace),
+            sandbox=SandboxSettings(**sandbox_kwargs),
         ),
-    ), workspace_path
-
-def test_none_mode_launches_shell_directly(tmp_path):
-    settings, workspace = _settings(tmp_path, mode="none")
-    launch = build_sandbox_launch(
-        settings,
-        cwd=workspace,
-        shell=Path("/bin/bash"),
-        rcfile=None,
+        workspace,
     )
+
+
+@pytest.fixture
+def fake_tools(monkeypatch, tmp_path):
+    """Pretend srt and its system dependencies are installed."""
+    paths = {
+        "srt": "/opt/bin/srt",
+        "bwrap": "/usr/bin/bwrap",
+        "socat": "/usr/bin/socat",
+        "rg": "/usr/bin/rg",
+        "script": "/usr/bin/script",
+    }
+    monkeypatch.setattr(sandbox_module.shutil, "which", lambda name: paths.get(name))
+    return paths
+
+
+def test_disabled_sandbox_launches_shell_directly(tmp_path, monkeypatch):
+    monkeypatch.setattr(sandbox_module.shutil, "which", lambda name: None)
+    settings, workspace = _settings(tmp_path, enabled=False, read_only=True, workspace=True)
+
+    launch = build_shell_launch(settings, cwd=workspace, shell=Path("/bin/bash"), rcfile=None)
 
     assert launch.executable == "/bin/bash"
     assert launch.argv == ["/bin/bash", "-i"]
     assert launch.cwd == str(workspace)
-    assert launch.home is None
 
 
-def test_read_only_mode_mounts_host_root_read_only(tmp_path):
-    settings, workspace = _settings(tmp_path, mode="read_only")
-    launch = build_sandbox_launch(
+def test_disabled_sandbox_passes_rcfile(tmp_path):
+    settings, workspace = _settings(tmp_path, enabled=False)
+    rcfile = tmp_path / "bashrc"
+
+    launch = build_shell_launch(settings, cwd=workspace, shell=Path("/bin/bash"), rcfile=rcfile)
+
+    assert launch.argv == ["/bin/bash", "--rcfile", str(rcfile), "-i"]
+
+
+def test_enabled_sandbox_without_srt_reports_install_hint(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        sandbox_module.shutil,
+        "which",
+        lambda name: None if name == "srt" else f"/usr/bin/{name}",
+    )
+    settings, workspace = _settings(tmp_path, enabled=True)
+
+    with pytest.raises(SandboxUnavailableError) as excinfo:
+        build_shell_launch(settings, cwd=workspace, shell=Path("/bin/bash"), rcfile=None)
+
+    message = str(excinfo.value)
+    assert "srt" in message
+    assert "npm install -g @anthropic-ai/sandbox-runtime" in message
+    assert "sandbox.enabled = false" in message
+
+
+def test_enabled_sandbox_lists_missing_system_packages(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        sandbox_module.shutil,
+        "which",
+        lambda name: None if name in {"socat", "rg"} else f"/usr/bin/{name}",
+    )
+    settings, workspace = _settings(tmp_path, enabled=True)
+
+    with pytest.raises(SandboxUnavailableError, match="sudo apt install -y socat ripgrep"):
+        build_shell_launch(settings, cwd=workspace, shell=Path("/bin/bash"), rcfile=None)
+
+
+def test_explicit_srt_path_must_be_executable(tmp_path, fake_tools):
+    settings, workspace = _settings(
+        tmp_path,
+        enabled=True,
+        srt_path=str(tmp_path / "missing-srt"),
+    )
+
+    with pytest.raises(SandboxUnavailableError, match="missing-srt"):
+        build_shell_launch(settings, cwd=workspace, shell=Path("/bin/bash"), rcfile=None)
+
+
+def test_enabled_sandbox_wraps_shell_in_srt_and_script(tmp_path, fake_tools):
+    settings, workspace = _settings(tmp_path, enabled=True)
+    rcfile = tmp_path / "bashrc"
+    settings_path = tmp_path / "srt.json"
+
+    launch = build_shell_launch(
         settings,
         cwd=workspace,
         shell=Path("/bin/bash"),
-        rcfile=None,
-        bwrap_path="/usr/bin/bwrap",
+        rcfile=rcfile,
+        srt_settings_path=settings_path,
     )
 
-    assert launch.executable == "/usr/bin/bwrap"
-    assert ["--ro-bind", "/", "/"] == launch.argv[3:6]
-    assert "--proc" in launch.argv
-    assert "--dev" in launch.argv
-    assert "--tmpfs" in launch.argv
+    assert launch.executable == "/opt/bin/srt"
+    assert launch.argv == [
+        "/opt/bin/srt",
+        "-s",
+        str(settings_path),
+        "--",
+        "/usr/bin/script",
+        "-qfec",
+        shlex.join(["/bin/bash", "--rcfile", str(rcfile), "-i"]),
+        "/dev/null",
+    ]
     assert launch.cwd == str(workspace)
-    assert launch.home is None
+    assert settings_path.stat().st_mode & 0o777 == 0o600
+    document = json.loads(settings_path.read_text())
+    assert document["filesystem"]["allowWrite"] == ["/"]
 
 
-def test_workspace_mode_exposes_only_workspace_as_user_data(tmp_path):
-    settings, workspace = _settings(tmp_path, mode="workspace")
-    launch = build_sandbox_launch(
+def test_workspace_launch_runs_in_workspace(tmp_path, fake_tools):
+    other = tmp_path / "project"
+    other.mkdir()
+    settings, cwd = _settings(tmp_path, enabled=True, workspace=True, workspace_path=str(other))
+
+    launch = build_shell_launch(
         settings,
-        cwd=workspace,
+        cwd=cwd,
         shell=Path("/bin/bash"),
         rcfile=None,
-        bwrap_path="/usr/bin/bwrap",
+        srt_settings_path=tmp_path / "srt.json",
     )
 
-    argv = launch.argv
-    bind_index = argv.index("--bind")
-    assert argv[bind_index + 1] == str(workspace)
-    assert argv[bind_index + 2] == str(SANDBOX_WORKSPACE)
-    assert ["--ro-bind", "/", "/"] != argv[3:6]
-    assert launch.cwd == "/workspace"
-    assert launch.home == "/tmp/t4g-home"
+    assert launch.cwd == str(other)
 
 
-def test_workspace_deny_write_remounts_subpath_read_only(tmp_path):
-    settings, workspace = _settings(tmp_path, mode="workspace", deny_write=["protected"])
-    protected = workspace / "protected"
-    protected.mkdir()
-
-    launch = build_sandbox_launch(
-        settings,
-        cwd=workspace,
-        shell=Path("/bin/bash"),
-        rcfile=None,
-        bwrap_path="/usr/bin/bwrap",
+def test_missing_workspace_is_rejected(tmp_path, fake_tools):
+    settings, cwd = _settings(
+        tmp_path,
+        enabled=True,
+        workspace=True,
+        workspace_path=str(tmp_path / "nope"),
     )
 
-    triples = list(zip(launch.argv, launch.argv[1:], launch.argv[2:]))
-    assert ("--ro-bind", str(protected), "/workspace/protected") in triples
-
-
-def test_workspace_deny_read_masks_original_content(tmp_path, monkeypatch):
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    (tmp_path / "home").mkdir()
-
-    settings, workspace = _settings(tmp_path, mode="workspace", deny_read=["secret.txt"])
-    secret = workspace / "secret.txt"
-    secret.write_text("secret", encoding="utf-8")
-
-    launch = build_sandbox_launch(
-        settings,
-        cwd=workspace,
-        shell=Path("/bin/bash"),
-        rcfile=None,
-        bwrap_path="/usr/bin/bwrap",
-    )
-
-    triples = list(zip(launch.argv, launch.argv[1:], launch.argv[2:]))
-    matching = [triple for triple in triples if triple[0] == "--ro-bind" and triple[2] == "/workspace/secret.txt"]
-    assert len(matching) == 1
-    assert matching[0][1] != str(secret)
-    assert matching[0][1].endswith("deny-file")
-
-
-def test_workspace_policy_cannot_escape_workspace(tmp_path):
-    settings, workspace = _settings(tmp_path, mode="workspace", deny_read=["../outside.txt"])
-    (tmp_path / "outside.txt").write_text("outside", encoding="utf-8")
-
-    with pytest.raises(ValueError, match="must stay inside"):
-        build_sandbox_launch(
+    with pytest.raises(FileNotFoundError, match="workspace does not exist"):
+        build_shell_launch(
             settings,
-            cwd=workspace,
+            cwd=cwd,
             shell=Path("/bin/bash"),
             rcfile=None,
-            bwrap_path="/usr/bin/bwrap",
+            srt_settings_path=tmp_path / "srt.json",
         )
 
 
-def test_extract_masks_only_capture_and_preserves_structure():
-    registry = CredentialSentinelRegistry()
-    content = "API_KEY=real-secret\nPORT=8080\n"
-    result = extract_and_substitute(
-        content,
-        r"(?m)^API_KEY=(\S+)$",
-        lambda value, index: registry.register(f"file:.env#{index}", value),
-    )
+def test_host_mode_allows_writes_everywhere(tmp_path):
+    settings, cwd = _settings(tmp_path, enabled=True)
 
-    assert result is not None
-    fake, captures = result
-    assert captures == ["real-secret"]
-    assert "API_KEY=real-secret" not in fake
-    assert "PORT=8080" in fake
-    sentinel = fake.split("API_KEY=", 1)[1].splitlines()[0]
-    assert sentinel.startswith(SENTINEL_PREFIX)
-    assert registry.lookup_real(sentinel) == "real-secret"
+    document = build_srt_settings(settings, cwd=cwd)
+
+    assert document["filesystem"] == {
+        "denyRead": [],
+        "allowRead": [],
+        "allowWrite": ["/"],
+        "denyWrite": [],
+    }
+    assert document["network"] == {"allowedDomains": [], "deniedDomains": []}
+    assert "credentials" not in document
 
 
-def test_extract_reuses_sentinel_for_duplicate_capture():
-    registry = CredentialSentinelRegistry()
-    result = extract_and_substitute(
-        "token=A\ntoken=A\ntoken=B\n",
-        r"token=(\S+)",
-        lambda value, index: registry.register(f"k#{index}", value),
-    )
-    assert result is not None
-    fake, captures = result
-    assert captures == ["A", "B"]
-    lines = fake.splitlines()
-    assert lines[0] == lines[1]
-    assert lines[0] != lines[2]
+def test_read_only_mode_allows_no_writes(tmp_path):
+    settings, cwd = _settings(tmp_path, enabled=True, read_only=True)
+
+    document = build_srt_settings(settings, cwd=cwd)
+
+    assert document["filesystem"]["allowWrite"] == []
 
 
-def test_extract_mask_duplicates_masks_unmatched_copy():
-    registry = CredentialSentinelRegistry()
-    result = extract_and_substitute(
-        "token=abc123\n# backup abc123\n",
-        r"token=(\S+)",
-        lambda value, index: registry.register(f"k#{index}", value),
-        mask_duplicates=True,
-    )
-    assert result is not None
-    fake, _ = result
-    assert "abc123" not in fake
-    sentinel = fake.split("token=", 1)[1].splitlines()[0]
-    assert f"# backup {sentinel}" in fake
+def test_read_only_mode_keeps_explicit_allow_write(tmp_path):
+    settings, cwd = _settings(tmp_path, enabled=True, read_only=True, allow_write=["~/.cache"])
+
+    document = build_srt_settings(settings, cwd=cwd)
+
+    assert document["filesystem"]["allowWrite"] == [str(Path.home() / ".cache")]
 
 
-def test_prepare_structured_mask_writes_0600_fake_and_keeps_original(tmp_path):
-    entry = CredentialFileSettings(
-        path=".env",
-        mode="mask",
-        extract=r"(?m)^API_KEY=(\S+)$",
-    )
-    settings, workspace = _settings(
+def test_workspace_mode_hides_user_data_and_rebinds_workspace(tmp_path, monkeypatch):
+    monkeypatch.setattr(sandbox_module, "WORKSPACE_HIDDEN_ROOTS", ("/home", str(tmp_path / "absent")))
+    settings, workspace = _settings(tmp_path, enabled=True, workspace=True)
+    rcfile = tmp_path / "bashrc"
+
+    document = build_srt_settings(settings, cwd=workspace, readable_paths=[rcfile])
+
+    filesystem = document["filesystem"]
+    assert filesystem["denyRead"] == ["/home"]
+    assert filesystem["allowRead"] == [str(workspace), str(rcfile)]
+    assert filesystem["allowWrite"] == [str(workspace)]
+
+
+def test_workspace_read_only_mode_exposes_workspace_without_writes(tmp_path):
+    settings, workspace = _settings(tmp_path, enabled=True, workspace=True, read_only=True)
+
+    document = build_srt_settings(settings, cwd=workspace)
+
+    assert str(workspace) in document["filesystem"]["allowRead"]
+    assert document["filesystem"]["allowWrite"] == []
+
+
+def test_relative_policy_paths_resolve_against_workspace(tmp_path):
+    other = tmp_path / "project"
+    other.mkdir()
+    settings, cwd = _settings(
         tmp_path,
-        mode="workspace",
-        credential_files=[entry],
+        enabled=True,
+        workspace=True,
+        workspace_path=str(other),
+        deny_write=["migrations", "./.git/"],
+        deny_read=["secrets"],
+        allow_write=["/var/cache/app"],
     )
-    env_file = workspace / ".env"
-    env_file.write_text("API_KEY=real-secret\nPORT=8080\n", encoding="utf-8")
-    registry = CredentialSentinelRegistry()
-    store = CredentialMaskStore()
-    try:
-        binds, deny = prepare_credential_masks(
-            settings,
-            cwd=workspace,
-            registry=registry,
-            store=store,
-        )
-        assert deny == []
-        assert len(binds) == 1
-        fake = binds[0].fake_path.read_text(encoding="utf-8")
-        assert "real-secret" not in fake
-        assert "PORT=8080" in fake
-        assert binds[0].target_path == Path("/workspace/.env")
-        assert binds[0].fake_path.stat().st_mode & 0o777 == 0o600
-        assert env_file.read_text(encoding="utf-8") == "API_KEY=real-secret\nPORT=8080\n"
-    finally:
-        store.close()
+
+    filesystem = build_srt_settings(settings, cwd=cwd)["filesystem"]
+
+    assert filesystem["denyWrite"] == [str(other / "migrations"), str(other / ".git")]
+    assert str(other / "secrets") in filesystem["denyRead"]
+    assert filesystem["allowWrite"] == [str(other), "/var/cache/app"]
 
 
-def test_prepare_whole_file_mask_replaces_entire_content(tmp_path):
-    entry = CredentialFileSettings(path="token.txt", mode="mask")
-    settings, workspace = _settings(
+def test_relative_policy_paths_resolve_against_cwd_outside_workspace(tmp_path):
+    settings, cwd = _settings(tmp_path, enabled=True, deny_write=[".env"])
+
+    filesystem = build_srt_settings(settings, cwd=cwd)["filesystem"]
+
+    assert filesystem["denyWrite"] == [str(cwd / ".env")]
+
+
+def test_network_settings_are_forwarded(tmp_path):
+    settings, cwd = _settings(
         tmp_path,
-        mode="workspace",
-        credential_files=[entry],
+        enabled=True,
+        allowed_domains=["github.com", "*.npmjs.org"],
+        denied_domains=["evil.github.com"],
+        tls_terminate=True,
     )
-    token = workspace / "token.txt"
-    token.write_text("super-secret", encoding="utf-8")
-    registry = CredentialSentinelRegistry()
-    store = CredentialMaskStore()
-    try:
-        binds, deny = prepare_credential_masks(
-            settings,
-            cwd=workspace,
-            registry=registry,
-            store=store,
-        )
-        assert deny == []
-        fake = binds[0].fake_path.read_text(encoding="utf-8")
-        assert fake.startswith(SENTINEL_PREFIX)
-        assert "super-secret" not in fake
-        assert registry.lookup_real(fake) == "super-secret"
-    finally:
-        store.close()
+
+    network = build_srt_settings(settings, cwd=cwd)["network"]
+
+    assert network == {
+        "allowedDomains": ["github.com", "*.npmjs.org"],
+        "deniedDomains": ["evil.github.com"],
+        "tlsTerminate": {},
+    }
 
 
-def test_extract_no_match_deny_degrades_to_read_deny(tmp_path):
-    entry = CredentialFileSettings(
-        path=".env",
-        mode="mask",
-        extract=r"TOKEN=(\S+)",
-        on_extract_no_match="deny",
-    )
-    settings, workspace = _settings(
+def test_credentials_translate_to_srt_rules(tmp_path):
+    settings, cwd = _settings(
         tmp_path,
-        mode="workspace",
-        credential_files=[entry],
+        enabled=True,
+        tls_terminate=True,
+        credential_files=[
+            CredentialFileSettings(
+                path=".env",
+                extract=r"API_KEY=(\S+)",
+                on_extract_no_match="deny",
+                mask_duplicates=True,
+                inject_hosts=["api.example.com"],
+            ),
+            CredentialFileSettings(path="~/.ssh", mode="deny", extract="ignored=(x)"),
+        ],
+        credential_env=[
+            CredentialEnvSettings(name="GITHUB_TOKEN", inject_hosts=["api.github.com"]),
+            CredentialEnvSettings(
+                name="DATABASE_URL",
+                extract=r"://[^:]+:([^@]+)@",
+                on_extract_no_match="error",
+            ),
+        ],
     )
-    env_file = workspace / ".env"
-    env_file.write_text("PORT=8080\n", encoding="utf-8")
-    registry = CredentialSentinelRegistry()
-    store = CredentialMaskStore()
-    try:
-        binds, deny = prepare_credential_masks(
-            settings,
-            cwd=workspace,
-            registry=registry,
-            store=store,
-        )
-        assert binds == []
-        assert deny == [(env_file.resolve(), Path("/workspace/.env"))]
-    finally:
-        store.close()
+
+    credentials = build_srt_settings(settings, cwd=cwd)["credentials"]
+
+    assert credentials == {
+        "files": [
+            {
+                "path": str(cwd / ".env"),
+                "mode": "mask",
+                "extract": r"API_KEY=(\S+)",
+                "onExtractNoMatch": "deny",
+                "maskDuplicates": True,
+                "injectHosts": ["api.example.com"],
+            },
+            {"path": str(Path.home() / ".ssh"), "mode": "deny"},
+        ],
+        "envVars": [
+            {"name": "GITHUB_TOKEN", "mode": "mask", "injectHosts": ["api.github.com"]},
+            {
+                "name": "DATABASE_URL",
+                "mode": "mask",
+                "extract": r"://[^:]+:([^@]+)@",
+                "onExtractNoMatch": "error",
+            },
+        ],
+    }
 
 
-def test_extract_no_match_error_aborts(tmp_path):
-    entry = CredentialFileSettings(
-        path=".env",
-        mode="mask",
-        extract=r"TOKEN=(\S+)",
-        on_extract_no_match="error",
-    )
-    settings, workspace = _settings(
+def test_plaintext_inject_opt_in_is_forwarded(tmp_path):
+    settings, cwd = _settings(
         tmp_path,
-        mode="workspace",
-        credential_files=[entry],
+        enabled=True,
+        allow_plaintext_inject=True,
+        credential_env=[CredentialEnvSettings(name="TOKEN")],
     )
-    (workspace / ".env").write_text("PORT=8080\n", encoding="utf-8")
-    registry = CredentialSentinelRegistry()
-    store = CredentialMaskStore()
+
+    credentials = build_srt_settings(settings, cwd=cwd)["credentials"]
+
+    assert credentials["allowPlaintextInject"] is True
+
+
+def test_descendant_pids_finds_grandchildren():
+    import os
+    import signal
+    import subprocess
+    import time
+
+    parent = subprocess.Popen(["bash", "-c", "sleep 30 & wait"], start_new_session=True)
     try:
-        with pytest.raises(RuntimeError, match="matched nothing"):
-            prepare_credential_masks(
-                settings,
-                cwd=workspace,
-                registry=registry,
-                store=store,
-            )
+        deadline = time.monotonic() + 5
+        found: list[int] = []
+        while time.monotonic() < deadline and not found:
+            found = descendant_pids(parent.pid)
+            time.sleep(0.05)
+        assert found
+        assert parent.pid not in found
     finally:
-        store.close()
-
-
-def test_build_launch_ro_binds_fake_over_real_path(tmp_path):
-    entry = CredentialFileSettings(
-        path=".env",
-        mode="mask",
-        extract=r"API_KEY=(\S+)",
-    )
-    settings, workspace = _settings(
-        tmp_path,
-        mode="workspace",
-        credential_files=[entry],
-    )
-    (workspace / ".env").write_text("API_KEY=secret\n", encoding="utf-8")
-    registry = CredentialSentinelRegistry()
-    store = CredentialMaskStore()
-    try:
-        binds, deny = prepare_credential_masks(
-            settings,
-            cwd=workspace,
-            registry=registry,
-            store=store,
-        )
-        launch = build_sandbox_launch(
-            settings,
-            cwd=workspace,
-            shell=Path("/bin/bash"),
-            rcfile=None,
-            bwrap_path="/usr/bin/bwrap",
-            masked_file_binds=binds,
-            credential_deny_read=deny,
-        )
-        triples = list(zip(launch.argv, launch.argv[1:], launch.argv[2:]))
-        assert (
-            "--ro-bind",
-            str(binds[0].fake_path),
-            "/workspace/.env",
-        ) in triples
-    finally:
-        store.close()
-
-
-def test_all_flags_false_launches_shell_directly(tmp_path):
-    settings, workspace_path = _settings(tmp_path, mode="none")
-
-    launch = build_sandbox_launch(
-        settings,
-        cwd=workspace_path,
-        shell=Path("/bin/bash"),
-        rcfile=None,
-        bwrap_path="/usr/bin/bwrap",
-    )
-
-    assert settings.sandbox.active is False
-    assert settings.sandbox.mode == "none"
-    assert launch.executable == "/bin/bash"
-
-
-def test_read_only_and_workspace_mount_workspace_read_only(tmp_path):
-    settings, workspace_path = _settings(tmp_path, mode="workspace_read_only")
-
-    launch = build_sandbox_launch(
-        settings,
-        cwd=workspace_path,
-        shell=Path("/bin/bash"),
-        rcfile=None,
-        bwrap_path="/usr/bin/bwrap",
-    )
-
-    triples = list(zip(launch.argv, launch.argv[1:], launch.argv[2:]))
-    assert ("--ro-bind", str(workspace_path), "/workspace") in triples
-    assert settings.sandbox.mode == "workspace_read_only"
-
-
-def test_masking_only_activates_bwrap_without_read_only_or_workspace(tmp_path):
-    entry = CredentialFileSettings(
-        path=".env",
-        mode="mask",
-        extract=r"API_KEY=(\S+)",
-    )
-    settings, workspace_path = _settings(
-        tmp_path,
-        mode="none",
-        credential_files=[entry],
-    )
-    settings.sandbox.masking = True
-    (workspace_path / ".env").write_text("API_KEY=real-secret\n", encoding="utf-8")
-
-    registry = CredentialSentinelRegistry()
-    store = CredentialMaskStore()
-    try:
-        binds, deny = prepare_credential_masks(
-            settings,
-            cwd=workspace_path,
-            registry=registry,
-            store=store,
-        )
-        launch = build_sandbox_launch(
-            settings,
-            cwd=workspace_path,
-            shell=Path("/bin/bash"),
-            rcfile=None,
-            bwrap_path="/usr/bin/bwrap",
-            masked_file_binds=binds,
-            credential_deny_read=deny,
-        )
-        assert launch.executable == "/usr/bin/bwrap"
-        assert ["--bind", "/", "/"] == launch.argv[3:6]
-        triples = list(zip(launch.argv, launch.argv[1:], launch.argv[2:]))
-        assert any(
-            item[0] == "--ro-bind" and item[2] == str(workspace_path / ".env")
-            for item in triples
-        )
-    finally:
-        store.close()
-
-
-def test_masking_false_leaves_credential_policy_inactive(tmp_path):
-    entry = CredentialFileSettings(
-        path=".env",
-        mode="mask",
-        extract=r"API_KEY=(\S+)",
-    )
-    settings, workspace_path = _settings(
-        tmp_path,
-        mode="workspace",
-        credential_files=[entry],
-    )
-    settings.sandbox.masking = False
-    (workspace_path / ".env").write_text("API_KEY=real-secret\n", encoding="utf-8")
-
-    registry = CredentialSentinelRegistry()
-    store = CredentialMaskStore()
-    try:
-        binds, deny = prepare_credential_masks(
-            settings,
-            cwd=workspace_path,
-            registry=registry,
-            store=store,
-        )
-        assert binds == []
-        assert deny == []
-        assert registry.size == 0
-        assert store.dir_path is None
-    finally:
-        store.close()
-
-
-def test_masking_true_applies_existing_credential_policy(tmp_path):
-    entry = CredentialFileSettings(
-        path=".env",
-        mode="mask",
-        extract=r"API_KEY=(\S+)",
-    )
-    settings, workspace_path = _settings(
-        tmp_path,
-        mode="workspace",
-        credential_files=[entry],
-    )
-    settings.sandbox.masking = True
-    (workspace_path / ".env").write_text("API_KEY=real-secret\n", encoding="utf-8")
-
-    registry = CredentialSentinelRegistry()
-    store = CredentialMaskStore()
-    try:
-        binds, deny = prepare_credential_masks(
-            settings,
-            cwd=workspace_path,
-            registry=registry,
-            store=store,
-        )
-        assert len(binds) == 1
-        assert deny == []
-        assert "real-secret" not in binds[0].fake_path.read_text(encoding="utf-8")
-    finally:
-        store.close()
-
+        os.killpg(parent.pid, signal.SIGKILL)
+        parent.wait()
