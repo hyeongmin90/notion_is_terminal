@@ -160,9 +160,12 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
     sandbox = _load_sandbox(sandbox_raw)
 
     input_prompt = str(terminal_raw.get("input_prompt", ""))
+    rows = int(terminal_raw.get("rows", 60))
     if input_prompt == "> ":
-        # Migrate the old default prompt to the promptless Input UI.
+        # Migrate the previous default UI settings together.
         input_prompt = ""
+        if rows == 40:
+            rows = 60
 
     terminal = TerminalSettings(
         shell=terminal_raw.get("shell", "/bin/bash"),
@@ -171,7 +174,7 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         host=terminal_raw.get("host", "ubuntu"),
         input_prompt=input_prompt,
         columns=int(terminal_raw.get("columns", 120)),
-        rows=int(terminal_raw.get("rows", 60)),
+        rows=rows,
         poll_interval=float(terminal_raw.get("poll_interval", 1.2)),
         refresh_interval=float(terminal_raw.get("refresh_interval", 1.5)),
         health_check_interval=float(terminal_raw.get("health_check_interval", 10.0)),
