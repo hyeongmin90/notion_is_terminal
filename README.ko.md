@@ -129,7 +129,7 @@ ANSI cursor 이동, 화면 지우기, scrolling, redraw sequence를 로컬에서
 - GPT 웹에서 원격 제어하려면 **ChatGPT의 Notion 연결이 필수**
 - 개발 워크플로에는 **GitHub 연결 권장**
 - 반복 운영 점검에는 지원되는 경우 ChatGPT 일정/자동화 기능 사용 가능
-- sandbox 사용 시에만: Node.js 22.12+, [`@anthropic-ai/sandbox-runtime`](https://github.com/anthropic-experimental/sandbox-runtime) (`srt`), `bubblewrap`, `socat`, `ripgrep`, `script`(util-linux)
+- sandbox 사용 시에만: Node.js 22.12+, [`@anthropic-ai/sandbox-runtime`](https://github.com/anthropic-experimental/sandbox-runtime) **0.0.78** (`srt`, 현재 검증 버전), `bubblewrap`, `socat`, `ripgrep`, `script`(util-linux)
 
 > [!IMPORTANT]
 > Terminal4GPTWeb 자체가 별도의 GPT API를 제공하는 구조는 아닙니다. GPT 웹은 생성된 Notion 페이지를 읽고 수정하는 방식으로 로컬 runtime에 접근하므로 GPT 웹에서 사용할 때는 Notion 연결이 필요합니다.
@@ -185,7 +185,7 @@ PTY sandbox를 켤 경우에만 (Ubuntu/WSL2, Node.js 22.12+):
 
 ```bash
 sudo apt install -y bubblewrap socat ripgrep util-linux
-npm install -g @anthropic-ai/sandbox-runtime
+npm install -g @anthropic-ai/sandbox-runtime@0.0.78
 srt --version
 ```
 
@@ -727,7 +727,7 @@ srt가 적용하는 세 가지:
 ```bash
 # 1. 설치 (Node.js 22.12+)
 sudo apt install -y bubblewrap socat ripgrep util-linux
-npm install -g @anthropic-ai/sandbox-runtime
+npm install -g @anthropic-ai/sandbox-runtime@0.0.78
 
 # 2. 켜기: `t4g init`의 "Enable sandbox"에 y로 답하거나,
 #    config.toml의 [sandbox]에 enabled = true 설정
@@ -808,7 +808,7 @@ $ curl -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/user
 
 - 네트워크 허용 목록과 파일시스템 규칙 모두 변경 후 `t4g daemon restart`가 필요합니다.
 - masking은 설정한 파일과 환경변수만 보호하며 secret scanner가 아닙니다.
-- srt는 experimental 단계(`@anthropic-ai/sandbox-runtime` 0.0.x)이므로 `npm install -g @anthropic-ai/sandbox-runtime@0.0.78`처럼 버전 고정을 권장합니다.
+- srt는 experimental 단계(`@anthropic-ai/sandbox-runtime` 0.0.x)이므로 `npm install -g @anthropic-ai/sandbox-runtime@0.0.78@0.0.78`처럼 버전 고정을 권장합니다.
 
 ### 이전 bubblewrap sandbox에서 업그레이드
 
