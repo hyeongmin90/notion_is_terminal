@@ -10,9 +10,12 @@ import shlex
 import shutil
 import signal
 import struct
+import tempfile
 import termios
 from dataclasses import dataclass
 from pathlib import Path
+from secrets import choice
+from uuid import uuid4
 from urllib.parse import unquote
 
 import pyte
@@ -33,6 +36,275 @@ class SandboxLaunch:
     argv: list[str]
     cwd: str
     home: str | None = None
+
+
+SENTINEL_PREFIX = "fake_value_"
+SENTINEL_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789_-"
+
+
+@dataclass(slots=True)
+class MaskedFileBind:
+    fake_path: Path
+    target_path: Path
+
+
+class CredentialSentinelRegistry:
+    """Per-PTY in-memory sentinel→real credential mapping."""
+
+    def __init__(self) -> None:
+        self._by_name: dict[str, tuple[str, str]] = {}
+        self._by_sentinel: dict[str, str] = {}
+
+    def register(self, name: str, real_value: str) -> str:
+        existing = self._by_name.get(name)
+        if existing is not None:
+            sentinel, old_real = existing
+            if old_real != real_value:
+                self._by_sentinel.pop(sentinel, None)
+                self._by_name[name] = (sentinel, real_value)
+                self._by_sentinel[sentinel] = real_value
+            return sentinel
+
+        sentinel = _mint_sentinel(real_value)
+        self._by_name[name] = (sentinel, real_value)
+        self._by_sentinel[sentinel] = real_value
+        return sentinel
+
+    def lookup_real(self, sentinel: str) -> str | None:
+        return self._by_sentinel.get(sentinel)
+
+    @property
+    def size(self) -> int:
+        return len(self._by_name)
+
+
+class CredentialMaskStore:
+    """Host-only temp store for read-only fake credential files."""
+
+    def __init__(self) -> None:
+        self._dir: Path | None = None
+        self._by_key: dict[str, Path] = {}
+
+    def write(self, key: str, content: str) -> Path:
+        if self._dir is None:
+            self._dir = Path(tempfile.mkdtemp(prefix="t4g-credmask-"))
+
+        fake_path = self._by_key.get(key)
+        if fake_path is None:
+            fake_path = self._dir / f"{len(self._by_key)}.fake"
+            self._by_key[key] = fake_path
+
+        try:
+            fake_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        fake_path.write_text(content, encoding="utf-8")
+        fake_path.chmod(0o600)
+        return fake_path
+
+    @property
+    def dir_path(self) -> Path | None:
+        return self._dir
+
+    def close(self) -> None:
+        if self._dir is not None:
+            shutil.rmtree(self._dir, ignore_errors=True)
+        self._dir = None
+        self._by_key.clear()
+
+
+def _mint_sentinel(real_value: str) -> str:
+    base = SENTINEL_PREFIX + str(uuid4())
+    pad = len(real_value.encode("utf-8")) - len(base)
+    if pad <= 0:
+        return base
+    return base + "".join(choice(SENTINEL_ALPHABET) for _ in range(pad))
+
+
+def extract_and_substitute(
+    content: str,
+    pattern: str,
+    sentinel_for: callable,
+    *,
+    mask_duplicates: bool = False,
+) -> tuple[str, list[str]] | None:
+    """Replace regex capture-group 1 spans with stable sentinels.
+
+    The regex may match repeatedly. Equal captured values share one sentinel.
+    When mask_duplicates is enabled, equal verbatim occurrences elsewhere in
+    the original content are masked too, longest capture first.
+    """
+    compiled = re.compile(pattern)
+    if compiled.groups != 1:
+        raise ValueError("Credential extract regex must contain exactly one capture group")
+
+    captures: list[str] = []
+    capture_index: dict[str, int] = {}
+    spans: list[tuple[int, int, str]] = []
+
+    for match in compiled.finditer(content):
+        value = match.group(1)
+        if value is None:
+            raise ValueError("Credential extract regex produced an undefined capture group 1")
+        if value == "":
+            continue
+        index = capture_index.get(value)
+        if index is None:
+            index = len(captures)
+            capture_index[value] = index
+            captures.append(value)
+        replacement = sentinel_for(value, index)
+        spans.append((match.start(1), match.end(1), replacement))
+
+    if not spans:
+        return None
+
+    if mask_duplicates:
+        claimed = [(start, end) for start, end, _ in spans]
+        sentinel_by_value = {
+            value: sentinel_for(value, capture_index[value])
+            for value in captures
+        }
+        for value in sorted(captures, key=len, reverse=True):
+            replacement = sentinel_by_value[value]
+            offset = 0
+            while True:
+                start = content.find(value, offset)
+                if start < 0:
+                    break
+                end = start + len(value)
+                if not any(start < c_end and end > c_start for c_start, c_end in claimed):
+                    spans.append((start, end, replacement))
+                    claimed.append((start, end))
+                offset = start + max(len(value), 1)
+
+    spans.sort(key=lambda item: item[0])
+    out: list[str] = []
+    cursor = 0
+    for start, end, replacement in spans:
+        if start < cursor:
+            continue
+        out.append(content[cursor:start])
+        out.append(replacement)
+        cursor = end
+    out.append(content[cursor:])
+    return "".join(out), captures
+
+
+def prepare_credential_masks(
+    settings: TerminalSettings,
+    *,
+    cwd: Path,
+    registry: CredentialSentinelRegistry,
+    store: CredentialMaskStore,
+) -> tuple[list[MaskedFileBind], list[tuple[Path, Path]]]:
+    """Build Claude-style fake-file binds and fail-closed deny fallbacks."""
+    entries = settings.sandbox.credential_files
+    if not entries:
+        return [], []
+
+    mode = settings.sandbox.mode
+    if mode == "none":
+        raise RuntimeError("Credential file masking requires an enabled PTY sandbox")
+
+    workspace = (
+        Path(settings.sandbox.workspace or settings.cwd).expanduser().resolve()
+        if mode == "workspace"
+        else None
+    )
+    base = workspace if workspace is not None else cwd
+
+    binds: list[MaskedFileBind] = []
+    deny_pairs: list[tuple[Path, Path]] = []
+
+    for item in entries:
+        candidate = Path(item.path).expanduser()
+        if not candidate.is_absolute():
+            candidate = base / candidate
+
+        try:
+            real_path = candidate.resolve(strict=True)
+        except (FileNotFoundError, OSError) as exc:
+            print(f"[credential-mask] skipping unavailable file {item.path}: {exc}")
+            continue
+
+        target_path = _host_path_to_sandbox(
+            real_path,
+            mode=mode,
+            workspace=workspace,
+        )
+
+        if item.mode == "deny":
+            deny_pairs.append((real_path, target_path))
+            continue
+
+        if real_path.is_dir():
+            print(
+                f"[credential-mask] skipping directory in mask mode: {item.path}; "
+                "use mode='deny' for directories"
+            )
+            continue
+
+        try:
+            raw = real_path.read_bytes()
+            content = raw.decode("utf-8", errors="strict")
+        except (OSError, UnicodeDecodeError) as exc:
+            print(f"[credential-mask] skipping unreadable/non-UTF8 file {item.path}: {exc}")
+            continue
+
+        key = f"file:{real_path}"
+        if not item.extract:
+            fake_content = registry.register(key, content)
+        else:
+            result = extract_and_substitute(
+                content,
+                item.extract,
+                lambda value, index: registry.register(f"{key}#{index}", value),
+                mask_duplicates=item.mask_duplicates,
+            )
+            if result is None:
+                policy = item.on_extract_no_match
+                if policy == "error":
+                    raise RuntimeError(
+                        f"Credential mask extract matched nothing for {item.path}"
+                    )
+                if policy == "deny":
+                    print(
+                        f"[credential-mask] extract matched nothing for {item.path}; "
+                        "degrading to deny"
+                    )
+                    deny_pairs.append((real_path, target_path))
+                    continue
+                print(
+                    f"[credential-mask] WARNING: extract matched nothing for {item.path}; "
+                    "file is left unprotected"
+                )
+                continue
+            fake_content, _captures = result
+
+        fake_path = store.write(key, fake_content)
+        binds.append(MaskedFileBind(fake_path=fake_path, target_path=target_path))
+
+    return binds, deny_pairs
+
+
+def _host_path_to_sandbox(
+    host_path: Path,
+    *,
+    mode: str,
+    workspace: Path | None,
+) -> Path:
+    if mode != "workspace":
+        return host_path
+
+    assert workspace is not None
+    try:
+        relative = host_path.relative_to(workspace)
+    except ValueError as exc:
+        raise ValueError(
+            f"Workspace credential path must stay inside {workspace}: {host_path}"
+        ) from exc
+    return SANDBOX_WORKSPACE / relative
 
 
 KEYS: dict[str, bytes] = {
@@ -73,6 +345,8 @@ def build_sandbox_launch(
     shell: Path,
     rcfile: Path | None,
     bwrap_path: str | None = None,
+    masked_file_binds: list[MaskedFileBind] | None = None,
+    credential_deny_read: list[tuple[Path, Path]] | None = None,
 ) -> SandboxLaunch:
     mode = settings.sandbox.mode
     shell_path = str(shell)
@@ -145,12 +419,16 @@ def build_sandbox_launch(
     for host_path, sandbox_path in deny_write:
         args.extend(["--ro-bind", str(host_path), str(sandbox_path)])
 
+    for masked in masked_file_binds or []:
+        args.extend(["--ro-bind", str(masked.fake_path), str(masked.target_path)])
+
     deny_read = _resolve_policy_paths(
         settings.sandbox.deny_read,
         mode=mode,
         cwd=cwd,
         workspace=workspace,
     )
+    deny_read.extend(credential_deny_read or [])
     if deny_read:
         mask_file, mask_dir = _sandbox_mask_paths()
         # Apply deeper entries first so a denied parent can never be reopened by
@@ -262,6 +540,8 @@ class PTYSession:
         self.current_cwd = str(Path(settings.cwd).expanduser().resolve())
         self._osc_buffer = ""
         self._rcfile: Path | None = None
+        self._credential_store: CredentialMaskStore | None = None
+        self._credential_registry = CredentialSentinelRegistry()
         self._closed = False
 
     def start(self) -> None:
@@ -279,12 +559,36 @@ class PTYSession:
         if shell.name == "bash":
             self._rcfile = self._write_bash_rcfile()
 
-        launch = build_sandbox_launch(
-            self.settings,
-            cwd=cwd,
-            shell=shell,
-            rcfile=self._rcfile,
-        )
+        masked_file_binds: list[MaskedFileBind] = []
+        credential_deny_read: list[tuple[Path, Path]] = []
+        if self.settings.sandbox.credential_files:
+            self._credential_store = CredentialMaskStore()
+            try:
+                masked_file_binds, credential_deny_read = prepare_credential_masks(
+                    self.settings,
+                    cwd=cwd,
+                    registry=self._credential_registry,
+                    store=self._credential_store,
+                )
+            except Exception:
+                self._credential_store.close()
+                self._credential_store = None
+                raise
+
+        try:
+            launch = build_sandbox_launch(
+                self.settings,
+                cwd=cwd,
+                shell=shell,
+                rcfile=self._rcfile,
+                masked_file_binds=masked_file_binds,
+                credential_deny_read=credential_deny_read,
+            )
+        except Exception:
+            if self._credential_store is not None:
+                self._credential_store.close()
+                self._credential_store = None
+            raise
         self.current_cwd = launch.cwd
 
         pid, master_fd = pty.fork()
@@ -433,6 +737,9 @@ class PTYSession:
             except ProcessLookupError:
                 pass
         self.pid = None
+        if self._credential_store is not None:
+            self._credential_store.close()
+            self._credential_store = None
 
     def _capture_cwd(self, text: str) -> None:
         self._osc_buffer = (self._osc_buffer + text)[-8192:]
