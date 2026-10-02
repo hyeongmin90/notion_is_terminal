@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from app.config import (
+from terminal4gptweb.config import (
     AppConfig,
     CredentialEnvSettings,
     CredentialFileSettings,
