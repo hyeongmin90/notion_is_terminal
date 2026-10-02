@@ -72,7 +72,7 @@ def start_daemon(config_path: Path | str = DEFAULT_CONFIG_PATH) -> int:
         [
             sys.executable,
             "-m",
-            "notion_is_terminal",
+            "app",
             "run",
             "--config",
             str(config_path),
@@ -221,7 +221,10 @@ def process_is_our_daemon(pid: int) -> bool:
     except OSError:
         return True
 
-    return "notion_is_terminal" in cmdline and " run " in f" {cmdline} "
+    return (
+        (" app " in f" {cmdline} " or " notion_is_terminal " in f" {cmdline} ")
+        and " run " in f" {cmdline} "
+    )
 
 
 def _remove_pid_file() -> None:
