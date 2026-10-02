@@ -23,7 +23,7 @@ GPT가 Notion 커넥터를 통해 생성된 페이지를 읽고 수정할 수 �
 Notion은 GPT와 로컬 daemon이 공유하는 입출력 화면이고, 실제 터미널 세션은 로컬 daemon이 관리합니다.
 
 > [!CAUTION]
-> PTY sandbox는 **선택 기능**입니다. `sandbox.enabled = false`이면 Input에 입력된 명령은 daemon을 실행한 Linux 사용자의 권한으로 그대로 실행됩니다. Workspace/read-only 격리와 credential file masking을 config에서 켤 수 있지만 일반적인 secret 관리까지 대체하지는 않습니다.
+> PTY sandbox는 **선택 기능**입니다. `read_only = false, workspace = false, masking = false`이면 Input에 입력된 명령은 daemon을 실행한 Linux 사용자의 권한으로 그대로 실행됩니다. Workspace/read-only 격리와 credential file masking을 config에서 켤 수 있지만 일반적인 secret 관리까지 대체하지는 않습니다.
 
 ---
 
@@ -730,10 +730,10 @@ show_cursor = true
 source_bashrc = true
 
 [sandbox]
-enabled = true
-workspace_enabled = true
-workspace = "/home/user/project"
-masking_enabled = true
+read_only = false
+workspace = true
+workspace_path = "/home/user/project"
+masking = true
 deny_read = []
 deny_write = [".git"]
 
@@ -758,11 +758,11 @@ vision_max_base64_chars = 160000
 
 | 설정 | 동작 |
 | --- | --- |
-| `sandbox.enabled = false` | 기존 unrestricted PTY. 다른 sandbox 설정은 적용되지 않음 |
-| `enabled = true`, `workspace_enabled = false` | host filesystem read-only + sandbox 전용 writable `/tmp` |
-| `enabled = true`, `workspace_enabled = true` | 지정 workspace만 RW로 `/workspace`에 노출 |
-| `masking_enabled = false` | credential 규칙을 config에 남겨두되 적용하지 않음 |
-| `masking_enabled = true` | credential file mask/deny 규칙 적용 |
+| `read_only = false, workspace = false, masking = false` | 기존 unrestricted PTY. 다른 sandbox 설정은 적용되지 않음 |
+| `read_only = true`, `workspace = false` | host filesystem read-only + sandbox 전용 writable `/tmp` |
+| `read_only = false`, `workspace = true` | 지정 workspace만 RW로 `/workspace`에 노출 |
+| `masking = false` | credential 규칙을 config에 남겨두되 적용하지 않음 |
+| `masking = true` | credential file mask/deny 규칙 적용 |
 
 Credential `extract` 정규식은 정확히 하나의 capture group을 가져야 합니다. **capture group 1만** per-PTY sentinel로 교체합니다.
 
@@ -802,16 +802,17 @@ Terminal4GPTWeb은 bubblewrap 기반의 **선택적 PTY sandbox**를 지원합�
 실질적인 동작은 다음 세 가지입니다.
 
 ```text
-sandbox.enabled = false
+read_only = false, workspace = false, masking = false
   → daemon 사용자 권한 그대로 실행
 
-sandbox.enabled = true
-workspace_enabled = false
+read_only = true, workspace = false
   → host read-only + sandbox 전용 /tmp
 
-sandbox.enabled = true
-workspace_enabled = true
+read_only = false, workspace = true
   → workspace만 사용자 데이터로 노출 + system path read-only
+
+read_only = true, workspace = true
+  → workspace만 노출하고 workspace 자체도 read-only
 ```
 
 추가 제어:
