@@ -28,7 +28,8 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
     if not token:
         raise ValueError("Notion integration token is required.")
 
-    parent_page_id = parse_page_id(input("Parent Notion page URL or page ID: ").strip())
+    with NotionClient(token) as notion:
+        parent_page_id = _choose_parent_page(notion)
     shell = _prompt("Shell", shutil.which("bash") or "/bin/bash")
     cwd = str(Path(_prompt("Initial working directory", str(Path.home()))).expanduser().resolve())
     user = _prompt("Prompt user", os.environ.get("USER", "user"))
@@ -73,9 +74,8 @@ def run_reinit(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
     current = load_config(config_path)
     parent_page_id = current.notion.parent_page_id.strip()
     if not parent_page_id:
-        parent_page_id = parse_page_id(
-            input("Parent Notion page URL or page ID: ").strip()
-        )
+        with NotionClient(current.notion.token) as notion:
+            parent_page_id = _choose_parent_page(notion)
 
     config = _create_notion_surfaces(
         token=current.notion.token,
@@ -86,6 +86,49 @@ def run_reinit(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
     )
     _print_init_result(config, config_path, reinitialized=True)
     return config
+
+
+def _choose_parent_page(notion: NotionClient) -> str:
+    print("\nChoose parent Notion page")
+    print("  1. Search pages")
+    print("  2. Enter URL / page ID")
+
+    choice = _prompt("Select", "1").strip()
+    if choice == "2":
+        return _enter_parent_page()
+
+    while True:
+        query = input("\nSearch page title (blank = recent pages): ").strip()
+        pages = notion.search_pages(query, limit=10)
+
+        if not pages:
+            print("No accessible pages found.")
+        else:
+            print("")
+            for index, page in enumerate(pages, start=1):
+                print(f"  {index}. {page.title}")
+                if page.url:
+                    print(f"     {page.url}")
+
+        print("\n  r. Search again")
+        print("  u. Enter URL / page ID")
+        selected = input("Select page: ").strip().lower()
+
+        if selected == "r":
+            continue
+        if selected == "u":
+            return _enter_parent_page()
+        if selected.isdigit():
+            index = int(selected)
+            if 1 <= index <= len(pages):
+                return pages[index - 1].page_id
+
+        print("Invalid selection. Choose a page number, r, or u.")
+
+
+def _enter_parent_page() -> str:
+    value = input("Parent Notion page URL or page ID: ").strip()
+    return parse_page_id(value)
 
 
 def _create_notion_surfaces(
