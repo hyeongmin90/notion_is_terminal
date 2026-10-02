@@ -1,6 +1,6 @@
 # Terminal4GPTWeb
 
-[한국어](./README.ko.md) · [Control commands](./CONTROL_COMMANDS.md) · [한국어 제어 명령](./CONTROL_COMMANDS.ko.md) · [Detailed installation](./INSTALL.md) · [한국어 설치 가이드](./INSTALL.ko.md)
+[한국어](./README.ko.md) · [GPT bootstrap prompt](./GPT_PROMPT.md) · [Control commands](./CONTROL_COMMANDS.md) · [Detailed installation](./INSTALL.md)
 
 **Give GPT on the web a real terminal surface without exposing a shell server to the internet.**
 
@@ -280,6 +280,14 @@ If the whole generated page is deleted later:
 t4g reinit
 t4g daemon restart
 ```
+
+---
+
+## First-time GPT setup
+
+For a new ChatGPT Web conversation, paste the **[GPT bootstrap prompt](./GPT_PROMPT.md)** as the first message.
+
+It tells GPT to read the generated Notion `Terminal4GPTWeb Help` page first, then use Terminal/Input/Browser with the correct `observe → act → observe` protocol. The bootstrap prompt intentionally stays short; the Help page and [CONTROL_COMMANDS.md](./CONTROL_COMMANDS.md) remain the source of truth.
 
 ---
 
