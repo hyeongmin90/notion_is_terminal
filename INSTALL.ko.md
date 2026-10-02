@@ -1,6 +1,6 @@
 # Terminal4GPTWeb 설치 및 최초 설정
 
-[English](./INSTALL.md) · [메인 README](./README.ko.md) · [제어 명령 전체 레퍼런스](./CONTROL_COMMANDS.ko.md)
+[English](./INSTALL.md) · [메인 README](./README.ko.md) · [GPT 시작 프롬프트](./GPT_PROMPT.ko.md) · [제어 명령 전체 레퍼런스](./CONTROL_COMMANDS.ko.md)
 
 이 문서는 Terminal4GPTWeb을 처음 설치하는 사용자를 위한 전체 절차입니다.
 
@@ -622,11 +622,12 @@ Browser Status와 Browser Screenshot이 갱신되면 브라우저도 정상입�
 
 ## 14. ChatGPT에서 첫 요청
 
-예:
+새 ChatGPT Web 대화를 시작할 때는 준비해 둔 **[GPT 시작 프롬프트](./GPT_PROMPT.ko.md)**를 첫 메시지로 그대로 붙여 넣는 것을 권장합니다. GPT가 먼저 `Terminal4GPTWeb Help`를 읽고 Input/Browser 제어 규칙을 익힌 뒤 현재 Terminal까지 확인하게 됩니다.
+
+그 다음부터는 평소처럼 작업을 요청하면 됩니다.
 
 ```text
-Notion의 Terminal4GPTWeb 페이지를 찾아서 현재 Terminal을 확인하고
-pwd를 실행한 뒤 결과를 알려줘.
+현재 Terminal에서 pwd를 실행하고 결과를 알려줘.
 ```
 
 개발에 GitHub도 연결했다면:

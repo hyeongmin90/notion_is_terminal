@@ -1,6 +1,6 @@
 # Terminal4GPTWeb installation and first-time setup
 
-[한국어](./INSTALL.ko.md) · [Main README](./README.md) · [Control Command Reference](./CONTROL_COMMANDS.md)
+[한국어](./INSTALL.ko.md) · [Main README](./README.md) · [GPT Bootstrap Prompt](./GPT_PROMPT.md) · [Control Command Reference](./CONTROL_COMMANDS.md)
 
 This guide walks through a clean installation from an empty machine/workspace to the first GPT Web command.
 
@@ -323,11 +323,12 @@ Browser Status and Browser Screenshot should update.
 
 ## 12. First ChatGPT request
 
-Example:
+For a fresh ChatGPT Web conversation, use the ready-to-paste **[GPT bootstrap prompt](./GPT_PROMPT.md)** as the first message. It makes GPT find the control page, read `Terminal4GPTWeb Help`, and learn the Input/Browser protocol before doing work.
+
+After that, make normal task requests such as:
 
 ```text
-Find my Terminal4GPTWeb page in Notion, inspect the current Terminal,
-run pwd, wait for Input to reset, and report the result.
+Run pwd in the current Terminal and report the result.
 ```
 
 With GitHub connected:
