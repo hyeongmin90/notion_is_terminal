@@ -370,7 +370,7 @@ def build_sandbox_launch(
     if not bwrap:
         raise RuntimeError(
             "PTY sandbox requires bubblewrap (bwrap). Install the 'bubblewrap' package "
-            "or set sandbox.mode = 'none'."
+            "or set sandbox.enabled = false."
         )
 
     args = [
