@@ -798,16 +798,6 @@ $ curl -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/user
 - Masking only protects configured files and variables; it is not a secret scanner.
 - Terminal4GPTWeb is currently tested against `@anthropic-ai/sandbox-runtime` **0.0.78**. srt is still in the 0.0.x line, so use this pinned version unless a newer version has been verified with this project.
 
-### Upgrading from the earlier bubblewrap sandbox
-
-Earlier versions built the bubblewrap sandbox themselves and used `masking = true`. When such a config is loaded:
-
-- configs without an `enabled` key that had any restriction on (`read_only`, `workspace`, `masking`, `deny_read`, `deny_write`) load as `enabled = true`, so they stay sandboxed (now through srt);
-- `masking` is no longer a key; credential rules apply whenever the sandbox is enabled;
-- a config with `mode = "mask"` credential rules must add `tls_terminate = true` (or `allow_plaintext_inject = true`), otherwise it fails to load with an explicit error;
-- the network is now restricted too: add the domains your work needs to `allowed_domains`;
-- workspace mode keeps real paths instead of remapping the workspace to `/workspace`.
-
 ---
 
 ## Configuration
@@ -955,12 +945,10 @@ Recommended precautions:
 
 The regression suite currently covers:
 
-- config parsing and legacy config migration;
 - Search Page / URL parent-page wizard paths;
 - persistent PTY behavior and terminal controls;
 - sandbox on/off launch paths and the missing-`srt` error;
 - translation of read-only / workspace / allow-write / deny rules, network allowlists and credential rules into srt settings;
-- legacy sandbox config migration to `sandbox.enabled`;
 - Notion runtime block handling and browser control helpers.
 
 GitHub Actions runs the test suite on Python 3.11, 3.12 and 3.13.
