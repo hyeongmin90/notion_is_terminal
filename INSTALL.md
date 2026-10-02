@@ -181,16 +181,14 @@ The wizard asks for:
 - parent page via Search Page or URL/Page ID
 - shell
 - initial working directory
-- PTY sandbox preset
+- Read-only filesystem toggle
+- Workspace restriction toggle and optional workspace path
+- Credential masking toggle
 - optional deny-read / deny-write paths
 - prompt label, terminal size and refresh timing
 - generated Notion page title
 
-Sandbox presets:
-
-- **None**: direct PTY with daemon-user permissions
-- **Read only**: host filesystem read-only; private writable `/tmp`
-- **Workspace**: selected workspace is RW while other user data is not exposed
+The security prompts are independent switches. Enabling both Read-only and Workspace makes the selected workspace visible but read-only. Enabling masking without read-only/workspace is also valid; bubblewrap is then used only to apply the configured masking/deny mounts.
 
 Credential-file rules are configured after initialization in `config.toml`.
 
@@ -217,11 +215,12 @@ deny_write = [".git"]
 
 Semantics:
 
-- `read_only = false`, `workspace = false`, `masking = false`: all PTY sandboxing is disabled; other sandbox settings remain stored but inactive
-- `enabled = true, workspace = false`: read-only host mode
-- `enabled = true, workspace = true`: workspace isolation
+- `read_only = false, workspace = false, masking = false`: unrestricted PTY when deny lists are also empty
+- `read_only = true, workspace = false`: read-only host mode
+- `read_only = false, workspace = true`: writable workspace isolation
+- `read_only = true, workspace = true`: read-only workspace isolation
 - `masking = false`: credential rules remain in config but are not applied
-- `masking = true`: apply configured credential masking/deny rules
+- `masking = true`: apply configured credential masking/deny rules; this can be enabled by itself
 
 Structured credential masking:
 
