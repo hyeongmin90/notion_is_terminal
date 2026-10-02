@@ -452,6 +452,13 @@ def _validate_credential_rule(
         raise ValueError(f"{name} mode must be 'mask' or 'deny': {label}")
     if item.on_extract_no_match not in {"warn", "deny", "error"}:
         raise ValueError(f"{name} on_extract_no_match must be warn, deny, or error: {label}")
+    if item.mode == "mask" and item.inject_hosts == []:
+        raise ValueError(
+            f"{name} inject_hosts cannot be empty in mask mode: {label}. "
+            "SRT rejects mask-without-injection; use mode='deny' to block the "
+            "credential entirely, omit inject_hosts to use allowed_domains, "
+            "or list the intended hosts."
+        )
     for host in item.inject_hosts or []:
         if not _single_line(host) or " " in host:
             raise ValueError(f"{name} inject_hosts entries must be domain patterns: {label}")
