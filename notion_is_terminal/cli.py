@@ -126,6 +126,16 @@ def doctor(config_path: Path) -> int:
     checks.append((os.access(Path(config.terminal.cwd).expanduser(), os.R_OK | os.X_OK), "Working directory is accessible"))
 
     sandbox = config.terminal.sandbox
+    checks.append((
+        True,
+        f"PTY sandbox: {sandbox.mode} (enabled={str(sandbox.enabled).lower()}, "
+        f"workspace_enabled={str(sandbox.workspace_enabled).lower()})",
+    ))
+    checks.append((
+        True,
+        f"Credential masking: {'enabled' if sandbox.masking_enabled else 'disabled'} "
+        f"({len(sandbox.credential_files)} configured file rule(s))",
+    ))
     if sandbox.mode != "none":
         bwrap = shutil.which("bwrap")
         checks.append((bwrap is not None, f"bubblewrap is installed: {bwrap or 'not found'}"))
