@@ -199,6 +199,9 @@ def prepare_credential_masks(
     store: CredentialMaskStore,
 ) -> tuple[list[MaskedFileBind], list[tuple[Path, Path]]]:
     """Build Claude-style fake-file binds and fail-closed deny fallbacks."""
+    if not settings.sandbox.enabled or not settings.sandbox.masking_enabled:
+        return [], []
+
     entries = settings.sandbox.credential_files
     if not entries:
         return [], []
@@ -561,7 +564,11 @@ class PTYSession:
 
         masked_file_binds: list[MaskedFileBind] = []
         credential_deny_read: list[tuple[Path, Path]] = []
-        if self.settings.sandbox.credential_files:
+        if (
+            self.settings.sandbox.enabled
+            and self.settings.sandbox.masking_enabled
+            and self.settings.sandbox.credential_files
+        ):
             self._credential_store = CredentialMaskStore()
             try:
                 masked_file_binds, credential_deny_read = prepare_credential_masks(
