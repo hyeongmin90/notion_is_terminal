@@ -25,9 +25,9 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         "Playwright Vision payload page.\n"
     )
 
-    token = getpass.getpass("Notion integration token: ").strip()
+    token = getpass.getpass("Notion API token (PAT or internal connection token): ").strip()
     if not token:
-        raise ValueError("Notion integration token is required.")
+        raise ValueError("Notion API token is required.")
 
     with NotionClient(token) as notion:
         parent_page_id = _choose_parent_page(notion)
