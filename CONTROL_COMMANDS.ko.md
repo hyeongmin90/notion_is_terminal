@@ -20,16 +20,16 @@
 > 잘못된 예:
 >
 > ```text
-> > hello :k ENTER
+> hello :k ENTER
 > ```
 >
 > 올바른 예:
 >
 > ```text
-> > hello
+> hello
 >
 > # 위 입력 처리 후, 다음 Input action에서
-> > :k ENTER
+> :k ENTER
 > ```
 >
 > 즉 Codex/Claude Code 같은 TUI에 문자열을 보낸 뒤 실제 Enter가 필요하면, 문자열 제출이 끝난 다음 `:k ENTER`를 **별도 action**으로 보냅니다.
@@ -38,28 +38,19 @@
 
 ## 1. Input 제출 규칙
 
-Input 블록의 기본 prompt는:
+Input 블록은 기본적으로 앞에 prompt 문자를 표시하지 않습니다.
 
-```text
-> 
-```
-
-입니다.
-
-일반 명령과 제어 명령은 **빈 줄로 끝나야 제출**됩니다.
+일반 명령과 제어 명령은 **newline 하나로 끝나면 제출**됩니다. Notion UI에서는 명령 뒤 Enter를 한 번 누르면 됩니다.
 
 예:
 
 ```text
-> pwd
-
+pwd
 ```
 
-Notion UI에서는 보통 명령 뒤 Enter를 두 번 누르면 됩니다.
+daemon은 Input을 polling하기 때문에 newline이 없는 미완성 입력은 실행하지 않습니다.
 
-daemon은 Input을 polling하기 때문에 빈 줄이 없는 미완성 입력은 실행하지 않습니다.
-
-에이전트가 Notion API/connector로 Input을 수정하는 경우 connector가 마지막 newline 하나를 제거할 수 있으므로, 실제 전송 text 끝에는 빈 줄이 확실히 남도록 여분의 newline을 붙이는 것이 안전합니다.
+에이전트가 Notion API/connector로 Input을 수정하는 경우 실제 전송 text 끝에 newline 하나가 유지되도록 작성합니다. 일부 connector는 마지막 newline을 제거할 수 있습니다.
 
 ### 한 번에 하나의 action
 
@@ -68,7 +59,7 @@ daemon은 Input을 polling하기 때문에 빈 줄이 없는 미완성 입력은
 ```text
 observe
 → Input에 action 하나 작성
-→ Input이 > 로 초기화될 때까지 대기
+→ Input이 빈 블록으로 초기화될 때까지 대기
 → 결과 다시 확인
 → 다음 action
 ```
@@ -80,21 +71,19 @@ observe
 형식:
 
 ```text
-> <shell command>
-
+<shell command>
 ```
 
 예:
 
 ```text
-> pwd
+pwd
 
-> git status
+git status
 
-> cd ~/project
+cd ~/project
 
-> python3
-
+python3
 ```
 
 별도 shell을 매번 만드는 방식이 아니라 하나의 persistent PTY를 유지합니다.
@@ -116,7 +105,7 @@ observe
 
 ## 3. 즉시 Ctrl token
 
-다음 5개 token은 **빈 줄 없이 즉시 처리**됩니다.
+다음 5개 token은 **newline 없이 즉시 처리**됩니다.
 
 | Token | 전달되는 control | 일반 용도 |
 | --- | --- | --- |
@@ -129,10 +118,10 @@ observe
 예:
 
 ```text
-> ^C
+^C
 ```
 
-long-running command를 중단해야 할 때 blank-line submit을 기다리지 않도록 별도로 처리합니다.
+long-running command를 중단해야 할 때 single-newline submit을 기다리지 않도록 별도로 처리합니다.
 
 ---
 
@@ -148,14 +137,13 @@ long-running command를 중단해야 할 때 blank-line submit을 기다리지 �
 예:
 
 ```text
-> :c C
+:c C
 
-> :c O
+:c O
 
-> :ctrl X
+:ctrl X
 
-> :ctrl BACKSLASH
-
+:ctrl BACKSLASH
 ```
 
 지원 범위는 ASCII control character로 변환 가능한:
@@ -191,14 +179,13 @@ TUI 예:
 
 ```text
 # nano 저장
-> :c O
+:c O
 
 # nano 종료
-> :c X
+:c X
 
 # 실행 중단
-> :c C
-
+:c C
 ```
 
 ---
@@ -252,16 +239,15 @@ key name은 대소문자를 구분하지 않으며 underscore도 제거됩니다
 예:
 
 ```text
-> :k ENTER
+:k ENTER
 
-> :key UP
+:key UP
 
-> :k PGDN
+:k PGDN
 
-> :k ESC
+:k ESC
 
-> :k F5
-
+:k F5
 ```
 
 ### TUI에서 Enter가 필요한 이유
@@ -271,8 +257,7 @@ Codex/Claude Code 같은 TUI는 pasted text와 실제 Enter key를 구분할 수
 예를 들어 먼저 문자열을 하나의 Input action으로 보냅니다.
 
 ```text
-> 질문 내용
-
+질문 내용
 ```
 
 문자열이 TUI 입력창에 들어갔지만 submit되지 않았다면, **같은 문자열 뒤에 `:k ENTER`를 붙이지 않습니다.**
@@ -280,8 +265,7 @@ Codex/Claude Code 같은 TUI는 pasted text와 실제 Enter key를 구분할 수
 다음 Input action에서 `:k ENTER`만 따로 보냅니다.
 
 ```text
-> :k ENTER
-
+:k ENTER
 ```
 
 Terminal4GPTWeb이 이 두 제출을 각각 처리해서, 첫 번째는 문자열 입력으로 전달하고 두 번째는 실제 Enter key sequence로 전달합니다.
@@ -314,14 +298,13 @@ Terminal4GPTWeb이 이 두 제출을 각각 처리해서, 첫 번째는 문자�
 
 ```text
 # vim 저장 후 종료
-> :s \e:wq\r
+:s \e:wq\r
 
 # vim 강제 종료
-> :s \e:q!\r
+:s \e:q!\r
 
 # ESC 전송
-> :s \e
-
+:s \e
 ```
 
 일반 command 실행에는 `:send`보다 normal shell input을 사용하고, escape sequence나 TUI raw 입력이 필요한 경우에만 사용하는 것이 좋습니다.
@@ -342,10 +325,9 @@ Terminal4GPTWeb이 이 두 제출을 각각 처리해서, 첫 번째는 문자�
 예:
 
 ```text
-> :rs 140x50
+:rs 140x50
 
-> :resize 100x30
-
+:resize 100x30
 ```
 
 허용 범위:
@@ -389,8 +371,7 @@ resize 시:
 예:
 
 ```text
-> :b goto https://example.com
-
+:b goto https://example.com
 ```
 
 현재 인식하는 browser subcommand 이름은 다음 11개이며, `open`이 `goto`의 alias이므로 실제 동작 종류는 10개입니다.
@@ -438,8 +419,7 @@ reload
 예:
 
 ```text
-> :b goto https://example.com
-
+:b goto https://example.com
 ```
 
 동작:
@@ -475,8 +455,7 @@ URL 인자는 하나만 받을 수 있습니다.
 예:
 
 ```text
-> :b shot
-
+:b shot
 ```
 
 ---
@@ -494,8 +473,7 @@ URL 인자는 하나만 받을 수 있습니다.
 예:
 
 ```text
-> :b move obs_20261002T040000Z_0003 620 240
-
+:b move obs_20261002T040000Z_0003 620 240
 ```
 
 용도:
@@ -524,8 +502,7 @@ move 자체도 성공 후 새로운 observation을 생성하므로 hover 상태�
 예:
 
 ```text
-> :b click obs_20261002T040000Z_0004 640 418
-
+:b click obs_20261002T040000Z_0004 640 418
 ```
 
 좌표는 **document 좌표가 아니라 viewport 기준 CSS pixel**입니다.
@@ -562,8 +539,7 @@ move 자체도 성공 후 새로운 observation을 생성하므로 hover 상태�
 예:
 
 ```text
-> :b drag obs_20261002T040000Z_0005 200 300 700 300
-
+:b drag obs_20261002T040000Z_0005 200 300 700 300
 ```
 
 내부 동작:
@@ -598,14 +574,13 @@ mouse wheel scroll.
 
 ```text
 # 아래로
-> :b scroll 0 600
+:b scroll 0 600
 
 # 위로
-> :b scroll 0 -600
+:b scroll 0 -600
 
 # 가로 scroll
-> :b scroll 400 0
-
+:b scroll 400 0
 ```
 
 `dx`, `dy`는 Playwright mouse wheel delta입니다.
@@ -640,10 +615,9 @@ scroll: x,y
 예:
 
 ```text
-> :b type user@example.com
+:b type user@example.com
 
-> :b type hello world
-
+:b type hello world
 ```
 
 Playwright `keyboard.insert_text()`를 사용합니다.
@@ -681,18 +655,17 @@ Playwright browser keyboard key press.
 예:
 
 ```text
-> :b key Enter
+:b key Enter
 
-> :b key Tab
+:b key Tab
 
-> :b key Escape
+:b key Escape
 
-> :b key ArrowDown
+:b key ArrowDown
 
-> :b key Shift+Tab
+:b key Shift+Tab
 
-> :b key Control+A
-
+:b key Control+A
 ```
 
 인자는 Playwright `keyboard.press()`에 그대로 전달됩니다.

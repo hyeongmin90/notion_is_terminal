@@ -41,7 +41,7 @@ def test_rich_text_is_chunked_below_notion_limit():
 
 
 def test_generated_page_has_exactly_two_code_blocks():
-    children = terminal_page_children("screen", "> ")
+    children = terminal_page_children("screen", "")
     code_blocks = [block for block in children if block["type"] == "code"]
     assert len(code_blocks) == 2
     assert code_blocks[0]["code"]["language"] == "plain text"

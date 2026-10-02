@@ -589,25 +589,20 @@ ChatGPT가 Terminal4GPTWeb 페이지를 찾지 못하면:
 먼저 Notion의 Terminal4GPTWeb 페이지를 직접 열고 Input에:
 
 ```text
-> pwd
-
+pwd
 ```
 
-처럼 입력합니다. 명령 뒤에 빈 줄이 있어야 제출됩니다. Notion UI에서는 Enter를 두 번 누르면 됩니다.
+처럼 입력하고 Enter를 한 번 누르면 제출됩니다.
 
-정상이라면 Terminal이 갱신되고 Input은 다시:
+정상이라면 Terminal이 갱신되고 Input은 다시 빈 블록으로 초기화됩니다.
 
-```text
->
-```
 
 로 초기화됩니다.
 
 다음:
 
 ```text
-> whoami
-
+whoami
 ```
 
 를 테스트합니다.
@@ -615,7 +610,7 @@ ChatGPT가 Terminal4GPTWeb 페이지를 찾지 못하면:
 Browser:
 
 ```text
-> :b goto https://example.com
+:b goto https://example.com
 ```
 
 Browser Status와 Browser Screenshot이 갱신되면 브라우저도 정상입니다.

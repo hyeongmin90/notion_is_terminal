@@ -361,7 +361,7 @@ class NotionClient:
                 code_block_payload(terminal_text, language="plain text"),
                 heading_payload("Input"),
                 paragraph_payload(
-                    "Input uses a compact > prompt. Normal text is sent after Enter twice. "
+                    "Input has no leading prompt. Normal text is sent after one Enter. "
                     "For TUI programs, use the key/control commands below when a real key press is required."
                 ),
                 code_block_payload(input_text, language="bash"),
@@ -904,11 +904,11 @@ def terminal_page_children(terminal_text: str, input_text: str) -> list[dict[str
         paragraph_payload("Live PTY screen. Do not edit this block manually."),
         code_block_payload(terminal_text, language="plain text"),
         heading_payload("Input"),
-        paragraph_payload("Write after > and press Enter twice to submit."),
+        paragraph_payload("Type one action and press Enter once to submit."),
         code_block_payload(input_text, language="bash"),
         divider_payload(),
         heading_payload("Quick Commands"),
-        bulleted_payload("Shell command — > pwd  (press Enter twice)"),
+        bulleted_payload("Shell command — pwd  (press Enter once)"),
         bulleted_payload("Key press — :k ENTER"),
         bulleted_payload("Ctrl key — :c C"),
         bulleted_payload("Browser open — :b goto https://example.com"),
@@ -929,7 +929,7 @@ def help_page_children() -> list[dict[str, Any]]:
         heading_payload("For Humans"),
         paragraph_payload(
             "Use the parent Terminal4GPTWeb page. Read Terminal for current shell state and write commands in Input. "
-            "Normal shell input is submitted by pressing Enter twice."
+            "Normal shell input is submitted by pressing Enter once."
         ),
         bulleted_payload("Run in background: t4g daemon start"),
         bulleted_payload("Check status: t4g daemon status"),
@@ -955,12 +955,12 @@ def help_page_children() -> list[dict[str, Any]]:
         bulleted_payload("Browser E2E — open the local app, inspect the screenshot with Vision, interact through coordinates/keyboard, and verify the resulting observation."),
         bulleted_payload("OPS — inspect process/container status, health endpoints, recent logs, disk/memory usage, and report only actionable failures."),
         bulleted_payload("Scheduled OPS — periodically ask GPT to inspect the Notion control surface, run a fixed health checklist, and notify only when a check fails."),
-        bulleted_payload("Shell: write after > and include a trailing blank line. Example: > pwd"),
+        bulleted_payload("Shell: write one command in Input and press Enter once. Example: pwd"),
         bulleted_payload("Never assume a browser coordinate from an old screenshot. Use the latest Browser Status observation_id."),
         bulleted_payload("For visual browser reasoning, fetch vision_page_url, decode data_base64 as image/jpeg, and verify observation_id matches."),
         bulleted_payload("After each browser action, wait for Browser Status to return to ready or failed before continuing."),
         heading_payload("Terminal Commands"),
-        bulleted_payload("Normal shell command — > <command>, then Enter twice. Example: > git status"),
+        bulleted_payload("Normal shell command — <command>, then Enter once. Example: git status"),
         bulleted_payload("Special key — :key NAME or :k NAME. Example: :k ENTER. Control commands must be submitted as their own Input action; do not append :k ENTER to ordinary text."),
         bulleted_payload("Ctrl combination — :ctrl KEY or :c KEY. Example: :c C"),
         bulleted_payload(r"Raw input — :send TEXT or :s TEXT. Escapes: \e, \x1b, \n, \r, \t, \\"),

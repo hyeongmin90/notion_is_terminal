@@ -34,10 +34,10 @@ IMMEDIATE_CONTROLS = {
 def extract_submission(block_text: str, prompt: str) -> tuple[InputAction | None, bool]:
     """Parse the Input code block.
 
-    Normal text is submitted only when it ends in a blank line (two newline
-    characters). This prevents polling from executing partially typed commands.
+    Normal text is submitted when it ends in a newline (one Enter in the
+    Notion UI). This prevents polling from executing partially typed commands.
     Ctrl tokens such as ^C are recognized immediately so a runaway command can
-    be interrupted without the extra blank line.
+    be interrupted without the trailing newline.
     """
     if not block_text.startswith(prompt):
         return None, False
@@ -49,10 +49,10 @@ def extract_submission(block_text: str, prompt: str) -> tuple[InputAction | None
         return InputAction(InputKind.CONTROL, IMMEDIATE_CONTROLS[stripped]), True
 
     normalized = body.replace("\r\n", "\n").replace("\r", "\n")
-    if not normalized.endswith("\n\n"):
+    if not normalized.endswith("\n"):
         return None, False
 
-    payload = normalized[:-2]
+    payload = normalized[:-1]
     if not payload.strip():
         return InputAction(InputKind.NONE), True
 

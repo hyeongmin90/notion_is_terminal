@@ -264,18 +264,17 @@ https://help.openai.com/ko-kr/articles/12532955-notion-app-and-setup-in-chatgpt
 Notion Input:
 
 ```text
-> pwd
-
+pwd
 ```
 
-명령 뒤 빈 줄까지 제출합니다. Notion UI에서는 Enter를 두 번 누르면 됩니다.
+명령 뒤 Enter를 한 번 눌러 제출합니다.
 
-Terminal이 갱신되고 Input이 다시 `>`로 돌아오면 정상입니다.
+Terminal이 갱신되고 Input이 빈 블록으로 초기화되면 정상입니다.
 
 Browser:
 
 ```text
-> :b goto https://example.com
+:b goto https://example.com
 ```
 
 Browser Status와 Screenshot이 갱신되는지 확인합니다.
@@ -381,7 +380,7 @@ Playwright로 메인 화면 smoke test까지 실행해.
 
 1. 먼저 **Terminal** 또는 **Browser Status**를 읽습니다.
 2. **Input**에는 한 번에 하나의 명령/action만 작성합니다.
-3. Input이 다시 `>`로 초기화될 때까지 기다립니다.
+3. Input이 다시 빈 블록으로 초기화될 때까지 기다립니다.
 4. 다음 action 전에 갱신된 Terminal/Browser Status를 다시 읽습니다.
 5. 브라우저 좌표 action은 반드시 최신 `observation_id`를 사용합니다.
 6. Vision이 필요하면 `vision_page_url`을 읽고 `data_base64`를 JPEG로 해석한 뒤 observation ID가 일치하는지 확인합니다.
@@ -533,16 +532,15 @@ nano notes.txt
 예:
 
 ```text
-> git status
+git status
 
-> :k ENTER
+:k ENTER
 
-> :c C
+:c C
 
-> :b goto https://example.com
+:b goto https://example.com
 
-> :b shot
-
+:b shot
 ```
 
 `:k ENTER` 같은 제어 명령은 일반 문자열 뒤에 붙이는 문법이 아니라 **하나의 독립된 Input action**입니다. 예를 들어 Codex에 문자열을 보낸 뒤 Enter가 필요하면 문자열 제출이 끝난 다음 `:k ENTER`만 별도로 제출합니다.
@@ -744,9 +742,9 @@ shell = "/bin/bash"
 cwd = "/home/user"
 user = "user"
 host = "ubuntu"
-input_prompt = "> "
+input_prompt = ""
 columns = 120
-rows = 40
+rows = 60
 poll_interval = 1.2
 refresh_interval = 1.5
 health_check_interval = 10.0

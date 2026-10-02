@@ -19,16 +19,16 @@ It covers:
 > Wrong:
 >
 > ```text
-> > hello :k ENTER
+> hello :k ENTER
 > ```
 >
 > Correct:
 >
 > ```text
-> > hello
+> hello
 >
 > # after that input is processed, submit a new Input action:
-> > :k ENTER
+> :k ENTER
 > ```
 >
 > For a TUI such as Codex or Claude Code, send the text first, then send `:k ENTER` by itself if a real Enter key is needed.
@@ -37,31 +37,26 @@ It covers:
 
 ## 1. Input submission
 
-The default Input prompt is:
+The Input block has no leading prompt character by default.
 
-```text
-> 
-```
-
-Normal shell commands and control commands are submitted only when the Input text ends in a **blank line**.
+Normal shell commands and control commands are submitted when the Input text ends in a **single newline** — one Enter in the Notion UI.
 
 Example:
 
 ```text
-> pwd
-
+pwd
 ```
 
 This prevents polling from executing partially typed text.
 
-When an agent edits Input through a Notion API/connector, leave a definite trailing blank line. Some connectors may trim a final newline.
+When an agent edits Input through a Notion API/connector, make sure the submitted action ends with a newline. Some connectors may trim a final newline.
 
 Use one action per submission:
 
 ```text
 observe
 → write one action
-→ wait for Input to reset to >
+→ wait for Input to reset to empty
 → observe the result
 → send the next action
 ```
@@ -73,21 +68,19 @@ observe
 Syntax:
 
 ```text
-> <shell command>
-
+<shell command>
 ```
 
 Examples:
 
 ```text
-> pwd
+pwd
 
-> git status
+git status
 
-> cd ~/project
+cd ~/project
 
-> python3
-
+python3
 ```
 
 Terminal4GPTWeb uses one persistent PTY rather than spawning a new shell for every command, so cwd, environment, foreground processes, REPLs and TUI state persist.
@@ -100,7 +93,7 @@ Multi-line shell text is sent as terminal Enter-separated input and an Enter is 
 
 ## 3. Immediate Ctrl tokens
 
-These five tokens are recognized **without the trailing blank line**:
+These five tokens are recognized **without the trailing newline**:
 
 | Token | Control | Typical use |
 | --- | --- | --- |
@@ -113,7 +106,7 @@ These five tokens are recognized **without the trailing blank line**:
 Example:
 
 ```text
-> ^C
+^C
 ```
 
 ---
@@ -132,14 +125,13 @@ Syntax:
 Examples:
 
 ```text
-> :c C
+:c C
 
-> :c O
+:c O
 
-> :ctrl X
+:ctrl X
 
-> :ctrl BACKSLASH
-
+:ctrl BACKSLASH
 ```
 
 Supported keys are the ASCII control range:
@@ -222,16 +214,15 @@ Names are case-insensitive and underscores are removed before lookup.
 Examples:
 
 ```text
-> :k ENTER
+:k ENTER
 
-> :key UP
+:key UP
 
-> :k PGDN
+:k PGDN
 
-> :k ESC
+:k ESC
 
-> :k F5
-
+:k F5
 ```
 
 This is especially useful for TUIs that distinguish pasted text from a real Enter key.
@@ -266,14 +257,13 @@ Examples:
 
 ```text
 # vim: save and quit
-> :s \e:wq\r
+:s \e:wq\r
 
 # vim: quit without saving
-> :s \e:q!\r
+:s \e:q!\r
 
 # ESC
-> :s \e
-
+:s \e
 ```
 
 Unknown escape spellings preserve the backslash rather than silently dropping it.
@@ -294,10 +284,9 @@ Syntax:
 Examples:
 
 ```text
-> :rs 140x50
+:rs 140x50
 
-> :resize 100x30
-
+:resize 100x30
 ```
 
 Allowed range:
@@ -334,8 +323,7 @@ Syntax:
 Example:
 
 ```text
-> :b goto https://example.com
-
+:b goto https://example.com
 ```
 
 Current browser subcommands:
@@ -372,8 +360,7 @@ Navigate to a URL.
 Example:
 
 ```text
-> :b goto https://example.com
-
+:b goto https://example.com
 ```
 
 The controller calls Playwright `page.goto(..., wait_until="domcontentloaded")`, waits the configured `settle_ms`, then publishes a fresh observation.
@@ -412,8 +399,7 @@ Move the mouse / create hover state.
 Example:
 
 ```text
-> :b move obs_20261002T040000Z_0003 620 240
-
+:b move obs_20261002T040000Z_0003 620 240
 ```
 
 The supplied observation ID must be current.
@@ -433,8 +419,7 @@ Click viewport coordinates.
 Example:
 
 ```text
-> :b click obs_20261002T040000Z_0004 640 418
-
+:b click obs_20261002T040000Z_0004 640 418
 ```
 
 Coordinates are **viewport-relative CSS pixels**, not document coordinates.
@@ -480,10 +465,9 @@ Mouse-wheel scroll.
 Examples:
 
 ```text
-> :b scroll 0 600
-> :b scroll 0 -600
-> :b scroll 400 0
-
+:b scroll 0 600
+:b scroll 0 -600
+:b scroll 400 0
 ```
 
 - positive `dy`: down;
@@ -504,10 +488,9 @@ Insert literal text into the currently focused browser element.
 Examples:
 
 ```text
-> :b type user@example.com
+:b type user@example.com
 
-> :b type hello world
-
+:b type hello world
 ```
 
 This uses Playwright `keyboard.insert_text()`.
@@ -541,12 +524,12 @@ Press one Playwright browser key.
 Examples:
 
 ```text
-> :b key Enter
-> :b key Tab
-> :b key Escape
-> :b key ArrowDown
-> :b key Shift+Tab
-> :b key Control+A
+:b key Enter
+:b key Tab
+:b key Escape
+:b key ArrowDown
+:b key Shift+Tab
+:b key Control+A
 ```
 
 The argument is passed to Playwright `keyboard.press()`.
@@ -954,7 +937,7 @@ Default:
 
 | Function | Command |
 | --- | --- |
-| shell line | `<command>` + blank line |
+| shell line | `<command>` + single newline |
 | Ctrl | `:ctrl KEY`, `:c KEY` |
 | special key | `:key NAME`, `:k NAME` |
 | raw input | `:send TEXT`, `:s TEXT` |

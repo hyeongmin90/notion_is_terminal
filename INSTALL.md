@@ -297,26 +297,24 @@ https://help.openai.com/en/articles/12532955-notion-app-and-setup-in-chatgpt
 
 ## 11. First manual smoke test
 
-On the generated Notion control page, put this in Input and submit with a blank line (Enter twice in the UI):
+On the generated Notion control page, put this in Input and press Enter once:
 
 ```text
-> pwd
-
+pwd
 ```
 
-The Terminal block should update and Input should return to `>`.
+The Terminal block should update and Input should return to an empty block.
 
 Then try:
 
 ```text
-> whoami
-
+whoami
 ```
 
 Browser smoke test:
 
 ```text
-> :b goto https://example.com
+:b goto https://example.com
 ```
 
 Browser Status and Browser Screenshot should update.
