@@ -1,6 +1,6 @@
 # Terminal4GPTWeb
 
-[English](./README.md) · [제어 명령 전체 레퍼런스](./CONTROL_COMMANDS.ko.md) · [English control commands](./CONTROL_COMMANDS.md) · [상세 설치 가이드](./INSTALL.ko.md) · [English installation](./INSTALL.md)
+[English](./README.md) · [GPT 시작 프롬프트](./GPT_PROMPT.ko.md) · [제어 명령 전체 레퍼런스](./CONTROL_COMMANDS.ko.md) · [상세 설치 가이드](./INSTALL.ko.md)
 
 **GPT 웹에 로컬 WSL/Linux 셸 서버를 직접 노출하지 않고도 실제 터미널 도구를 연결합니다.**
 
@@ -286,6 +286,14 @@ Browser Status와 Screenshot이 갱신되는지 확인합니다.
 t4g reinit
 t4g daemon restart
 ```
+
+---
+
+## 처음 GPT에 연결할 때
+
+새 ChatGPT Web 대화에서 처음 Terminal4GPTWeb을 사용할 때는 **[GPT 시작 프롬프트](./GPT_PROMPT.ko.md)**를 첫 메시지로 붙여 넣는 것을 권장합니다.
+
+이 프롬프트는 GPT에게 Notion의 `Terminal4GPTWeb Help`를 먼저 읽게 하고, 이후 Terminal/Input/Browser를 올바른 `observe → act → observe` 방식으로 사용하도록 안내합니다. 전체 command 문법을 프롬프트에 복제하지 않고 Help 페이지와 [제어 명령 전체 레퍼런스](./CONTROL_COMMANDS.ko.md)를 source of truth로 사용합니다.
 
 ---
 
