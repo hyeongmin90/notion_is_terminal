@@ -1,6 +1,6 @@
 # Terminal4GPTWeb 설치 및 최초 설정
 
-[English](./INSTALL.md) · [메인 README](./README.ko.md) · [GPT 시작 프롬프트](./GPT_PROMPT.ko.md) · [제어 명령 전체 레퍼런스](./CONTROL_COMMANDS.ko.md)
+[English](./INSTALL.md) · [메인 README](./README.md) · [GPT 시작 프롬프트](./GPT_PROMPT.ko.md) · [제어 명령 전체 레퍼런스](./CONTROL_COMMANDS.ko.md)
 
 이 문서는 Terminal4GPTWeb을 처음 설치하는 사용자를 위한 전체 절차입니다.
 
@@ -663,5 +663,5 @@ t4g daemon restart
 
 ## 다음 문서
 
-- [README.ko.md](./README.ko.md) — 전체 기능 및 사용법
+- [README.ko.md](./README.md) — 전체 기능 및 사용법
 - [INSTALL.md](./INSTALL.md) — English installation guide

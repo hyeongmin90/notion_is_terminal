@@ -1,50 +1,50 @@
 # Terminal4GPTWeb
 
-[한국어](./README.ko.md) · [GPT bootstrap prompt](./GPT_PROMPT.md) · [Control commands](./CONTROL_COMMANDS.md) · [Detailed installation](./INSTALL.md)
+[English](./README.en.md) · [GPT 시작 프롬프트](./GPT_PROMPT.ko.md) · [제어 명령 전체 레퍼런스](./CONTROL_COMMANDS.ko.md) · [상세 설치 가이드](./INSTALL.ko.md)
 
-**Give GPT on the web a real terminal surface without exposing a shell server to the internet.**
+**GPT 웹에 로컬 WSL/Linux 셸 서버를 직접 노출하지 않고도 실제 터미널 도구를 연결합니다.**
 
-`Terminal4GPTWeb` turns Notion into a bridge between a web-based GPT session, a persistent Linux PTY, and a Playwright-controlled browser.
+`Terminal4GPTWeb`은 Notion을 **GPT 웹 세션, 로컬 Linux PTY, Playwright 브라우저 사이의 브리지**로 사용합니다.
 
-When GPT can read and edit the generated Notion page through a Notion connector, it can:
+GPT가 Notion 커넥터를 통해 생성된 페이지를 읽고 수정할 수 있다면 다음과 같은 작업이 가능합니다.
 
-- inspect the current terminal screen;
-- send shell commands;
-- press terminal keys such as Enter, arrows, Backspace, Esc, and function keys;
-- send Ctrl combinations such as Ctrl-C, Ctrl-O, and Ctrl-X;
-- interact with TUI programs such as `nano`, `vim`, `less`, `top`, Codex, and other terminal applications;
-- keep shell state such as `cd`, environment variables, REPL sessions, and foreground programs alive between requests;
-- open web pages with Playwright, inspect screenshots with GPT Vision, and control the browser with viewport-relative mouse coordinates;
-- optionally run the shell inside [Anthropic Sandbox Runtime (srt)](https://github.com/anthropic-experimental/sandbox-runtime), with filesystem and network limits and credential masking.
+- 현재 터미널 화면 읽기
+- 셸 명령 실행
+- Enter, 방향키, Backspace, Esc, Function key 입력
+- Ctrl-C, Ctrl-O, Ctrl-X 같은 Ctrl 조합 입력
+- `nano`, `vim`, `less`, `top`, Codex 같은 TUI 프로그램 조작
+- `cd`, 환경변수, REPL, foreground process 등 셸 상태 유지
+- Playwright로 웹 페이지를 열고 GPT Vision으로 화면을 확인한 뒤 viewport 좌표로 마우스 조작
+- 선택적으로 [Anthropic Sandbox Runtime (srt)](https://github.com/anthropic-experimental/sandbox-runtime) 안에서 셸 실행 — 파일시스템·네트워크 제한과 credential masking
 
-In short:
+한 줄로 표현하면:
 
 > **GPT Web ↔ Notion ↔ PTY / Playwright ↔ WSL / Linux / Web**
 
-Notion is the shared control surface. The local daemon owns the real terminal.
+Notion은 GPT와 로컬 daemon이 공유하는 입출력 화면이고, 실제 터미널 세션은 로컬 daemon이 관리합니다.
 
 > [!CAUTION]
-> PTY sandboxing is **optional**. With `sandbox.enabled = false` (the default), anything written to Input runs with the permissions of the Linux user running the daemon. With `sandbox.enabled = true` the shell runs inside [Anthropic Sandbox Runtime (srt)](https://github.com/anthropic-experimental/sandbox-runtime), which adds filesystem, network and credential-masking rules, but it does not replace normal secret-management practices.
+> PTY sandbox는 **선택 기능**입니다. `sandbox.enabled = false`(기본값)이면 Input에 입력된 명령은 daemon을 실행한 Linux 사용자의 권한으로 그대로 실행됩니다. `sandbox.enabled = true`이면 셸이 [Anthropic Sandbox Runtime (srt)](https://github.com/anthropic-experimental/sandbox-runtime) 안에서 실행되어 파일시스템·네트워크·credential masking 규칙이 적용되지만, 일반적인 secret 관리까지 대체하지는 않습니다.
 
 ---
 
-## Why this exists
+## 왜 만들었나요?
 
-Web-based GPT clients are convenient for reasoning, coding, and remote assistance, but they normally do not have direct access to your local WSL terminal.
+GPT 웹은 코드 분석, 문제 해결, 원격 작업 지시에 편리하지만 일반적으로 사용자의 로컬 WSL 터미널에 직접 접근할 수는 없습니다.
 
-This project uses Notion as a lightweight bridge:
+이 프로젝트는 Notion을 중간 브리지로 사용합니다.
 
-1. GPT reads the **Terminal** block.
-2. GPT writes commands or key events to the **Input** block.
-3. `t4g` polls that block and forwards the input to a real PTY.
-4. The PTY output is rendered back into the **Terminal** block.
-5. GPT reads the updated screen and continues.
+1. GPT가 **Terminal** 블록을 읽습니다.
+2. GPT가 **Input** 블록에 명령 또는 키 입력을 작성합니다.
+3. `t4g` daemon이 이를 읽어 실제 PTY로 전달합니다.
+4. PTY 화면을 다시 **Terminal** 블록에 렌더링합니다.
+5. GPT가 갱신된 화면을 읽고 다음 작업을 이어갑니다.
 
-No public SSH endpoint, custom web server, database, or message queue is required.
+별도의 공개 SSH endpoint, 자체 웹 서버, DB, MQ가 필요하지 않습니다.
 
 ---
 
-## Architecture
+## 구조
 
 ```text
 ┌──────────────────────┐
@@ -72,7 +72,7 @@ No public SSH endpoint, custom web server, database, or message queue is require
                                       │ sandbox.enabled = true
                                       ▼
                          ┌───────────────────────────┐
-                         │ srt (optional)            │
+                         │ srt (선택)                │
                          │  bubblewrap fs rules      │
                          │  network allowlist proxy  │
                          │  credential masking       │
@@ -82,91 +82,93 @@ No public SSH endpoint, custom web server, database, or message queue is require
                               Bash / TUI on WSL / Linux
 ```
 
-The Terminal block is a **screen snapshot**, not an append-only stdout log. ANSI cursor movement, clearing, scrolling, and redraw sequences are interpreted locally with `pyte` before the screen is written back to Notion.
+Terminal 블록은 stdout을 계속 쌓는 로그가 아니라 **현재 터미널 화면의 snapshot**입니다.
 
-That is why redraw-oriented applications can work at a text-UI level.
+ANSI cursor 이동, 화면 지우기, scrolling, redraw sequence를 로컬에서 `pyte`로 처리한 뒤 최종 화면만 Notion에 기록합니다.
+
+그래서 `top`, `less`, `vim`, Codex처럼 화면을 다시 그리는 프로그램도 텍스트 TUI 수준에서 사용할 수 있습니다.
 
 ---
 
-## What it can do
+## 주요 기능
 
-- Persistent interactive Bash session
-- Real PTY semantics: `isatty(stdin/stdout/stderr) == true`
+- Persistent interactive Bash
+- 실제 PTY 기반 동작
 - ANSI / VT screen emulation
-- Shell state persistence
-- Foreground-process stdin
+- `cd`, 환경변수, REPL 상태 유지
+- foreground process stdin 전달
 - Ctrl-C / Ctrl-D / Ctrl-Z / Ctrl-L / Ctrl-\\
-- Arrow keys, Home/End, Page Up/Down
+- 방향키, Home/End, Page Up/Down
 - Enter, Backspace, Delete, Insert, Tab, Esc
 - F1-F12
-- Raw byte / escape-sequence input
-- Runtime terminal resize
-- Persistent Playwright Chromium session
-- Browser screenshots published to Notion
-- Compact JPEG Vision payload on an isolated Notion child page
-- Observation-ID guarded mouse move/click/drag/scroll
-- Browser keyboard input and navigation
-- Detached background daemon
-- Single-instance locking
-- Runtime block self-healing
-- `doctor` diagnostics
-- Optional srt PTY sandbox: read-only / workspace filesystem isolation, write allow/deny lists, outbound domain allowlist
-- Claude Code-style credential masking for files and environment variables: the shell sees `fake_value_<uuid>`, allowed HTTPS requests carry the real value
+- raw byte / escape sequence 입력
+- runtime terminal resize
+- persistent Playwright Chromium session
+- Notion Browser Screenshot 자동 갱신
+- 별도 child page의 압축 JPEG Vision payload
+- observation ID 기반 mouse move/click/drag/scroll
+- browser keyboard / navigation 제어
+- background daemon
+- single-instance lock
+- runtime block 자동 복구
+- `doctor` 진단
+- 선택적 srt PTY sandbox: read-only / workspace 파일시스템 격리, 쓰기 허용·차단 목록, 외부 도메인 허용 목록
+- Claude Code 방식의 credential masking (파일·환경변수): 셸에서는 `fake_value_<uuid>`로 보이고, 허용된 HTTPS 요청에는 실제 값이 실림
 
-Tested interaction patterns include Bash, Python REPL, nano, vim-style key sequences, Codex TUI, interactive prompts, and long-running processes interrupted with Ctrl-C.
+현재 Bash, Python REPL, nano, vim 스타일 key sequence, Codex TUI, interactive prompt, long-running process + Ctrl-C 형태를 실제로 테스트했습니다.
 
 ---
 
-## Requirements
+## 요구사항
 
-- WSL2 Ubuntu or another Linux environment
+- WSL2 Ubuntu 또는 Linux
 - Python 3.11+
 - Bash
-- A Notion API token: Personal Access Token or Internal Connection token
-- A Notion page to use as the parent for generated Terminal4GPTWeb pages
-- **GPT / ChatGPT Web with the Notion connection enabled** for remote GPT control
-- Optional but recommended for development: **GitHub connection** in ChatGPT
-- Optional for recurring operations: ChatGPT scheduled tasks / automations, where available
-- Only for sandbox mode: Node.js 22.12+, [`@anthropic-ai/sandbox-runtime`](https://github.com/anthropic-experimental/sandbox-runtime) **0.0.78** (`srt`, currently tested version), `bubblewrap`, `socat`, `ripgrep`, and `script` (util-linux)
+- Notion API token: Personal Access Token 또는 Internal Connection token
+- 생성 페이지의 부모로 사용할 Notion page
+- GPT 웹에서 원격 제어하려면 **ChatGPT의 Notion 연결이 필수**
+- 개발 워크플로에는 **GitHub 연결 권장**
+- 반복 운영 점검에는 지원되는 경우 ChatGPT 일정/자동화 기능 사용 가능
+- sandbox 사용 시에만: Node.js 22.12+, [`@anthropic-ai/sandbox-runtime`](https://github.com/anthropic-experimental/sandbox-runtime) **0.0.78** (`srt`, 현재 검증 버전), `bubblewrap`, `socat`, `ripgrep`, `script`(util-linux)
 
 > [!IMPORTANT]
-> Terminal4GPTWeb does not expose a standalone GPT API. GPT Web reaches the local runtime by reading and editing the generated Notion pages, so the Notion connection is required for the GPT-Web workflow.
+> Terminal4GPTWeb 자체가 별도의 GPT API를 제공하는 구조는 아닙니다. GPT 웹은 생성된 Notion 페이지를 읽고 수정하는 방식으로 로컬 runtime에 접근하므로 GPT 웹에서 사용할 때는 Notion 연결이 필요합니다.
 
 ---
 
-## First-time installation and setup
+## 처음 설치하는 경우
 
-For a completely new installation, see **[INSTALL.md](./INSTALL.md)**. It covers the Notion Developer portal, token creation, parent-page access, Linux packages, Playwright, the wizard, sandbox configuration, ChatGPT's Notion connection, and the first smoke test.
+처음부터 설치한다면 **[INSTALL.ko.md](./INSTALL.ko.md)**를 먼저 보는 것을 권장합니다. Notion Developer portal에서 token을 만드는 과정부터 Parent Page 권한, Linux 패키지, Playwright, wizard, sandbox config, ChatGPT Notion 연결, 첫 smoke test까지 순서대로 설명합니다.
 
-The short version is below.
+아래는 전체 과정을 압축한 버전입니다.
 
-### 1. Prepare a Notion parent page
+### 1. Notion Parent Page 준비
 
-Create an empty Notion page, for example:
+Notion에 빈 페이지를 하나 만듭니다.
 
 ```text
 Terminal4GPTWeb Root
 ```
 
-The current `t4g init` flow creates the generated control page under a parent page. You can select it by search in the wizard, so copying its URL in advance is optional.
+현재 `t4g init`은 생성 페이지를 넣을 parent page를 하나 선택합니다. URL을 미리 복사하지 않아도 wizard에서 page 검색으로 선택할 수 있습니다.
 
-### 2. Obtain a Notion API token
+### 2. Notion API Token 준비
 
-The **local daemon** needs a Notion API token. This is separate from the Notion app/plugin connection used by ChatGPT Web.
+**로컬 t4g daemon**이 Notion API를 호출하기 위한 token입니다. **ChatGPT 웹의 Notion 연결과는 별개**입니다.
 
-You can use either:
+사용 가능한 방식:
 
-- a **Personal Access Token (PAT)** for a trusted personal CLI workflow; or
-- an **Internal Connection** token for a dedicated bot identity.
+- 개인 신뢰 환경: **Personal Access Token (PAT)**
+- 전용 bot 권한 분리: **Internal Connection token**
 
-For an Internal Connection, grant it access to the parent page and enable content permissions needed to read, insert, and update page content.
+Internal Connection을 쓴다면 Parent Page 접근 권한을 부여하고 page content를 읽고/추가하고/수정할 수 있는 capability가 필요합니다.
 
-Official Notion guides:
+Notion 공식 문서:
 
 - https://developers.notion.com/guides/get-started/quick-start
 - https://developers.notion.com/guides/get-started/internal-connections
 
-### 3. Install the local package
+### 3. 설치
 
 ```bash
 git clone https://github.com/hyeongmin90/terminal4gptweb.git
@@ -179,7 +181,7 @@ pip install -e .
 playwright install chromium
 ```
 
-Only if you plan to enable the PTY sandbox (Ubuntu/WSL2, Node.js 22.12+):
+PTY sandbox를 켤 경우에만 (Ubuntu/WSL2, Node.js 22.12+):
 
 ```bash
 sudo apt install -y bubblewrap socat ripgrep util-linux
@@ -187,16 +189,16 @@ npm install -g @anthropic-ai/sandbox-runtime@0.0.78
 srt --version
 ```
 
-Without `sandbox.enabled = true` none of these are needed.
+`sandbox.enabled = true`가 아니면 위 도구는 필요 없습니다.
 
-Verify:
+설치 확인:
 
 ```bash
 t4g --version
 t4g --help
 ```
 
-If an editable install stops working after the repository directory is renamed or moved:
+프로젝트 폴더 이름이나 위치를 변경해서 editable install이 깨졌다면:
 
 ```bash
 cd ~/terminal4gptweb
@@ -204,13 +206,13 @@ pip install -e .
 hash -r
 ```
 
-### 4. Run the setup wizard
+### 4. Wizard 실행
 
 ```bash
 t4g init
 ```
 
-The wizard asks for the Notion API token and then offers:
+Notion API token을 입력한 뒤 Parent Page를:
 
 ```text
 Choose parent Notion page
@@ -219,9 +221,11 @@ Choose parent Notion page
   2. Enter URL / page ID
 ```
 
-It also asks for the shell, initial working directory, terminal size and whether to enable the srt PTY sandbox (plus its filesystem and network options).
+에서 선택합니다.
 
-The generated Notion structure is:
+이어 shell, initial working directory, terminal 크기, srt PTY sandbox 사용 여부(및 파일시스템·네트워크 옵션) 등을 설정합니다.
+
+생성 구조:
 
 ```text
 Parent Page
@@ -231,13 +235,13 @@ Parent Page
    └─ Browser Vision Payload
 ```
 
-Local config is stored at:
+설정 파일:
 
 ```text
 ~/.config/notion_is_terminal/config.toml
 ```
 
-### 5. Validate and start
+### 5. 진단 및 실행
 
 ```bash
 t4g doctor
@@ -245,25 +249,27 @@ t4g daemon start
 t4g daemon status
 ```
 
-### 6. Connect Notion in ChatGPT Web
+### 6. ChatGPT 웹에서 Notion 연결
 
-This is a **second, separate connection** from the local API token.
+이것은 위의 **로컬 Notion API token과 별개의 두 번째 연결**입니다.
 
-Connect Notion from ChatGPT Apps/Plugins, sign in to the account/workspace containing the generated page, and approve access to the relevant content.
+ChatGPT의 Apps/Plugins에서 Notion을 연결하고, Terminal4GPTWeb 페이지가 있는 계정/workspace/content에 접근할 수 있도록 승인합니다.
 
-OpenAI setup guide:
+OpenAI 도움말:
 
-https://help.openai.com/en/articles/12532955-notion-app-and-setup-in-chatgpt
+https://help.openai.com/ko-kr/articles/12532955-notion-app-and-setup-in-chatgpt
 
-### 7. First smoke test
+### 7. 첫 동작 확인
 
-In the generated Notion Input block:
+Notion Input:
 
 ```text
 pwd
 ```
 
-Press Enter once to submit. Terminal should update and Input should reset to an empty block.
+명령 뒤 Enter를 한 번 눌러 제출합니다.
+
+Terminal이 갱신되고 Input이 빈 블록으로 초기화되면 정상입니다.
 
 Browser:
 
@@ -271,9 +277,9 @@ Browser:
 :b goto https://example.com
 ```
 
-Browser Status and Browser Screenshot should update.
+Browser Status와 Screenshot이 갱신되는지 확인합니다.
 
-If the whole generated page is deleted later:
+메인 페이지 전체를 삭제했다면:
 
 ```bash
 t4g reinit
@@ -282,171 +288,171 @@ t4g daemon restart
 
 ---
 
-## First-time GPT setup
+## 처음 GPT에 연결할 때
 
-For a new ChatGPT Web conversation, paste the **[GPT bootstrap prompt](./GPT_PROMPT.md)** as the first message.
+새 ChatGPT Web 대화에서 처음 Terminal4GPTWeb을 사용할 때는 **[GPT 시작 프롬프트](./GPT_PROMPT.ko.md)**를 첫 메시지로 붙여 넣는 것을 권장합니다.
 
-It tells GPT to read the generated Notion `Terminal4GPTWeb Help` page first, then use Terminal/Input/Browser with the correct `observe → act → observe` protocol. The bootstrap prompt intentionally stays short; the Help page and [CONTROL_COMMANDS.md](./CONTROL_COMMANDS.md) remain the source of truth.
+이 프롬프트는 GPT에게 Notion의 `Terminal4GPTWeb Help`를 먼저 읽게 하고, 이후 Terminal/Input/Browser를 올바른 `observe → act → observe` 방식으로 사용하도록 안내합니다. 전체 command 문법을 프롬프트에 복제하지 않고 Help 페이지와 [제어 명령 전체 레퍼런스](./CONTROL_COMMANDS.ko.md)를 source of truth로 사용합니다.
 
 ---
 
-## Recommended ChatGPT Web setup
+## GPT 웹 연결 구성
 
-Terminal4GPTWeb is most useful when ChatGPT Web has the following connections.
+Terminal4GPTWeb은 ChatGPT 웹에서 다음 연결을 함께 사용할 때 활용 범위가 가장 넓습니다.
 
-### 1. Notion — required
+### 1. Notion — 필수
 
-Connect Notion to ChatGPT and make the generated Terminal4GPTWeb page accessible to that connection.
+ChatGPT에 Notion을 연결하고 생성된 Terminal4GPTWeb 페이지를 ChatGPT가 읽고 수정할 수 있게 해야 합니다.
 
-The Notion connection is the transport used by GPT Web:
+GPT 웹이 로컬 runtime에 접근하는 경로는 다음과 같습니다.
 
 ```text
 GPT Web
-  ↓ read/write through Notion
-Terminal4GPTWeb control page
-  ↓ polled by local daemon
+  ↓ Notion 읽기/수정
+Terminal4GPTWeb 제어 페이지
+  ↓ local daemon polling
 PTY / Playwright
 ```
 
-Without the Notion connection, the local daemon still works, but GPT Web cannot use the generated page as its terminal/browser tool surface.
+Notion 연결이 없더라도 로컬 daemon 자체는 실행할 수 있지만, GPT 웹에서 이 페이지를 터미널/브라우저 도구처럼 사용할 수는 없습니다.
 
-### 2. GitHub — recommended for development
+### 2. GitHub — 개발 작업에 권장
 
-Connect GitHub when you want GPT to work with repository context in addition to the local runtime.
+ChatGPT에 GitHub도 연결하면 repository context와 로컬 실행 환경을 함께 사용할 수 있습니다.
 
-A useful development loop is:
+권장 개발 흐름:
 
 ```text
 GitHub
-  ↓ issue / PR / history / code context
+  ↓ issue / PR / commit history / code context
 GPT Web
   ↓
 Notion → Terminal4GPTWeb
   ↓
-edit / build / unit test / integration test
+로컬 수정 / build / unit test / integration test
   ↓
 Playwright + Vision
   ↓
-browser E2E verification
+브라우저 E2E 검증
 ```
 
-This lets GPT use GitHub for repository-level context while using the local terminal for commands that must run on your machine.
+GitHub에서는 코드, 이슈, PR, 변경 이력을 확인하고, 실제 머신에서 실행해야 하는 build/test 명령은 Terminal4GPTWeb을 통해 수행하는 식입니다.
 
-Example requests:
+예:
 
 ```text
-Review the latest changes in this repository, run the relevant tests locally,
-and verify the web UI with Playwright.
+이 저장소 최신 변경사항을 리뷰하고 관련 테스트를 로컬에서 실행한 뒤
+Playwright로 실제 웹 화면까지 검증해줘.
 
-Check the linked issue, reproduce it locally, fix it, run the test suite,
-then verify the affected screen through Browser Vision.
+연결된 이슈를 확인하고 로컬에서 재현한 뒤 수정하고,
+테스트를 통과시키고 Browser Vision으로 영향받은 화면까지 확인해줘.
 ```
 
-### 3. Scheduled tasks / automations — optional for OPS
+### 3. 일정 / 자동화 — OPS에 선택적으로 활용
 
-If your ChatGPT client supports scheduled tasks or automations, Terminal4GPTWeb can also act as an operations surface.
+사용 중인 ChatGPT 환경에서 일정/자동화 기능을 지원한다면 Terminal4GPTWeb을 반복 운영 점검 surface로 사용할 수도 있습니다.
 
-A scheduled task can periodically ask GPT to:
+예를 들어 주기적으로 다음을 확인하게 할 수 있습니다.
 
-- inspect `docker ps`, service/process state, disk and memory usage;
-- call local health endpoints;
-- inspect recent logs for errors;
-- run a lightweight browser smoke test;
-- report only when a check fails or needs attention.
+- `docker ps`, process/service 상태
+- 로컬 health endpoint
+- 최근 ERROR 로그
+- disk / memory 상태
+- Playwright 기반 간단한 브라우저 smoke test
+- 이상이 있을 때만 알림
 
-Example OPS instruction:
+예시:
 
 ```text
-Every morning, inspect my Terminal4GPTWeb page.
-Run the service health checklist, check recent error logs,
-and verify the main web page with Playwright.
-Notify me only if something needs attention.
+매일 아침 Terminal4GPTWeb 페이지를 확인해.
+서비스 health checklist와 최근 오류 로그를 확인하고,
+Playwright로 메인 화면 smoke test까지 실행해.
+문제가 있을 때만 알려줘.
 ```
 
-Keep recurring checks read-only where possible. Do not put credentials, sudo passwords, private keys, or other secrets into the Notion Input block.
+반복 점검은 가능한 한 read-only 명령 위주로 구성하는 것을 권장합니다. 비밀번호, API Key, private key 같은 비밀정보를 Notion Input에 넣으면 안 됩니다.
 
 ---
 
-## How GPT / agents should operate
+## GPT / 에이전트 동작 규칙
 
-For reliable agent behavior, use a strict observe → act → observe loop:
+안정적으로 사용하려면 에이전트가 다음 `observe → act → observe` 규칙을 따르는 것이 좋습니다.
 
-1. Read **Terminal** or **Browser Status**.
-2. Write exactly one command/action to **Input**.
-3. Wait until Input resets to `>`.
-4. Read the refreshed output before issuing the next action.
-5. For browser coordinate actions, use only the latest `observation_id`.
-6. When Vision is needed, fetch `vision_page_url`, decode `data_base64` as JPEG, and verify that its observation ID matches Browser Status.
-7. Stop and surface the error when Browser Status is `failed`; do not continue with stale coordinates.
-8. Input is submitted only when it ends with a blank line. When an agent writes Input through the Notion API or a connector, end the text with **one extra newline** (three in total): connectors may trim one, and without the blank line the command just sits in Input.
-9. If Input shows `[SANDBOX UNAVAILABLE]`, the sandbox is enabled but srt or one of its tools is missing; report it rather than retrying commands.
+1. 먼저 **Terminal** 또는 **Browser Status**를 읽습니다.
+2. **Input**에는 한 번에 하나의 명령/action만 작성합니다.
+3. Input이 다시 빈 블록으로 초기화될 때까지 기다립니다.
+4. 다음 action 전에 갱신된 Terminal/Browser Status를 다시 읽습니다.
+5. 브라우저 좌표 action은 반드시 최신 `observation_id`를 사용합니다.
+6. Vision이 필요하면 `vision_page_url`을 읽고 `data_base64`를 JPEG로 해석한 뒤 observation ID가 일치하는지 확인합니다.
+7. Browser Status가 `failed`라면 이전 좌표를 계속 쓰지 말고 오류를 먼저 처리합니다.
+8. Input은 빈 줄로 끝나야 제출됩니다. 에이전트가 Notion API나 커넥터로 Input을 쓸 때는 끝에 **줄바꿈을 하나 더**(총 3개) 붙입니다. 커넥터가 마지막 줄바꿈 하나를 지우는 경우가 있어, 빈 줄이 없으면 명령이 Input에 그대로 남습니다.
+9. Input에 `[SANDBOX UNAVAILABLE]`이 보이면 sandbox가 켜져 있는데 srt나 필요한 도구가 없는 상태입니다. 명령을 반복하지 말고 이 상태를 보고합니다.
 
-This protocol is also documented in the generated **Terminal4GPTWeb Help** Notion child page.
+이 규칙은 생성되는 **Terminal4GPTWeb Help** Notion child page에도 같이 기록됩니다.
 
 ---
 
-## Example workflows
+## 활용 예시
 
-### Development + test
+### 개발 + 테스트
 
 ```text
-GitHub context
-→ inspect code / issue / PR
-→ run local build and tests through Terminal
-→ start the application
-→ open it with Playwright
-→ inspect with Vision
-→ interact and verify the result
+GitHub context 확인
+→ 코드 / 이슈 / PR 분석
+→ Terminal에서 로컬 build/test
+→ 애플리케이션 실행
+→ Playwright로 접속
+→ Vision으로 화면 확인
+→ 실제 상호작용 후 결과 검증
 ```
 
-### Local troubleshooting
+### 로컬 장애 대응
 
 ```text
-read Terminal
-→ inspect process/container state
-→ inspect logs
-→ run health request
-→ apply a fix
-→ restart service
-→ verify again
+Terminal 확인
+→ process/container 상태 확인
+→ 로그 확인
+→ health request
+→ 수정/재시작
+→ 다시 검증
 ```
 
 ### Browser E2E
 
 ```text
 :b goto <url>
-→ read latest Vision payload
-→ choose coordinates
+→ 최신 Vision payload 확인
+→ 좌표 판단
 → :b click <obs_id> <x> <y>
-→ wait for new observation
-→ verify the changed screen
+→ 새 observation 대기
+→ 변경된 화면 확인
 ```
 
-### OPS / recurring checks
+### OPS / 정기 점검
 
-Use a fixed, minimal checklist such as:
+고정 checklist를 짧게 두는 방식이 좋습니다.
 
 ```text
-1. process/container status
+1. process/container 상태
 2. health endpoint
-3. recent ERROR logs
+3. 최근 ERROR 로그
 4. disk + memory
 5. browser smoke test
 ```
 
-For automated runs, prefer notifications only on actionable failures rather than sending a success message every time.
+자동화한다면 매번 정상 보고를 보내기보다는 실제 조치가 필요한 실패가 있을 때만 알리도록 구성하는 편이 좋습니다.
 
 ---
 
-## Run as a background daemon
+## 백그라운드 실행
 
-For normal use:
+일반적으로는 daemon 모드를 권장합니다.
 
 ```bash
 t4g daemon start
 ```
 
-Lifecycle commands:
+관리 명령:
 
 ```bash
 t4g daemon status
@@ -456,7 +462,7 @@ t4g daemon logs
 t4g daemon logs -f
 ```
 
-Runtime files:
+runtime 파일:
 
 ```text
 ~/.cache/notion_is_terminal/daemon.pid
@@ -464,9 +470,11 @@ Runtime files:
 ~/.cache/notion_is_terminal/instance.lock
 ```
 
-The daemon survives closing the WSL terminal window. It does not currently auto-start after WSL itself shuts down or Windows reboots.
+WSL 터미널 창을 닫아도 daemon은 계속 실행됩니다.
 
-Foreground mode is available for debugging:
+단, 현재는 WSL 자체가 종료되거나 Windows를 재부팅했을 때 자동으로 다시 실행되지는 않습니다.
+
+디버깅할 때는 foreground 실행도 가능합니다.
 
 ```bash
 t4g run
@@ -474,25 +482,25 @@ t4g run
 
 ---
 
-## Using it from GPT Web
+## GPT 웹에서 사용하기
 
-Once the generated Notion page is visible to GPT through a Notion connector, the page becomes a terminal tool surface.
+생성된 Notion 페이지를 GPT가 Notion 커넥터를 통해 읽고 수정할 수 있다면, 이 페이지가 사실상 **GPT용 터미널 도구 인터페이스**가 됩니다.
 
-A typical flow:
+예를 들면:
 
 ```text
-You:
-Check my Terminal4GPTWeb page and run git status.
+사용자:
+Terminal4GPTWeb 페이지 확인해서 git status 실행해줘.
 
 GPT:
-1. reads the Terminal block
-2. writes "git status" to Input
-3. waits for the daemon to execute it
-4. reads the refreshed Terminal block
-5. explains the result
+1. Terminal 블록 확인
+2. Input 블록에 "git status" 작성
+3. daemon이 명령 실행
+4. Terminal 블록 갱신
+5. 결과를 다시 읽고 설명
 ```
 
-Because the underlying PTY is persistent, GPT can continue with:
+실제 PTY 세션이 계속 유지되므로 GPT는 다음과 같은 흐름도 이어서 사용할 수 있습니다.
 
 ```bash
 cd ~/project
@@ -502,26 +510,26 @@ codex
 nano notes.txt
 ```
 
-without creating a new shell for every request.
+명령마다 새로운 shell을 만드는 구조가 아닙니다.
 
-## Control commands
+## 제어 명령
 
-The complete control protocol is documented separately:
+전체 제어 프로토콜은 별도 문서에 모아두었습니다.
 
-- **[Control Command Reference](./CONTROL_COMMANDS.md)** — every Input command, PTY key/alias, Ctrl input, raw escape, resize rule, Playwright browser command, observation rule and local `t4g` CLI command.
-- [한국어 제어 명령 전체 레퍼런스](./CONTROL_COMMANDS.ko.md)
+- **[제어 명령 전체 레퍼런스](./CONTROL_COMMANDS.ko.md)** — Input 명령, PTY key/alias, Ctrl 입력, raw escape, resize 규칙, Playwright browser 명령, observation 규칙, 로컬 `t4g` CLI까지 전부 설명합니다.
+- [English Control Command Reference](./CONTROL_COMMANDS.md)
 
-The main control pattern is intentionally simple:
+기본 제어 흐름은 다음처럼 단순하게 유지합니다.
 
 ```text
-observe current Terminal / Browser Status
-→ write one action to Input
-→ wait for Input to reset
-→ observe the new state
-→ continue
+현재 Terminal / Browser Status 관찰
+→ Input에 action 하나 작성
+→ Input 초기화 대기
+→ 새 상태 관찰
+→ 다음 action
 ```
 
-A few examples:
+예:
 
 ```text
 git status
@@ -535,15 +543,15 @@ git status
 :b shot
 ```
 
-Control commands such as `:k ENTER` are **separate Input actions**, not inline syntax appended to ordinary text. For example, send text to Codex first, then submit `:k ENTER` alone in the next Input action if a real Enter key is needed.
+`:k ENTER` 같은 제어 명령은 일반 문자열 뒤에 붙이는 문법이 아니라 **하나의 독립된 Input action**입니다. 예를 들어 Codex에 문자열을 보낸 뒤 Enter가 필요하면 문자열 제출이 끝난 다음 `:k ENTER`만 별도로 제출합니다.
 
-The underlying PTY is persistent, so cwd, environment, REPLs and TUI state continue across actions.
+PTY는 지속형이므로 cwd, 환경변수, REPL, TUI 상태가 action 사이에 유지됩니다.
 
-### Browser + Vision overview
+### Browser + Vision 개요
 
-The daemon also keeps one persistent Playwright Chromium context/page. Browser state such as cookies, login state, local/session storage, focus and history can survive across browser actions.
+daemon은 하나의 persistent Playwright Chromium context/page도 유지합니다. cookie, 로그인 상태, local/session storage, focus, browser history 등이 browser action 사이에 유지될 수 있습니다.
 
-Each successful browser action publishes a fresh observation:
+각 정상 browser action은 새로운 observation을 게시합니다.
 
 ```text
 Browser Status
@@ -552,110 +560,110 @@ Browser Status
   vision_page_url
 
 Browser Screenshot
-  latest viewport PNG
+  최신 viewport PNG
 
 Browser Vision Payload
-  compressed JPEG + matching observation_id
+  압축 JPEG + 동일 observation_id
 ```
 
-Coordinate actions are guarded by the current `observation_id`, preventing old screenshot coordinates from being applied after the page changes. The full browser command syntax, coordinate rules, focus/keyboard behavior, hover workflow, failure recovery and current limitations are all in **[CONTROL_COMMANDS.md](./CONTROL_COMMANDS.md)**.
+좌표 action은 최신 `observation_id`를 요구하므로 화면이 바뀐 뒤 이전 screenshot 좌표를 잘못 적용하는 것을 막습니다. Browser 명령의 전체 문법, 좌표 규칙, focus/keyboard 동작, hover 흐름, 실패 복구, 현재 제한사항은 **[CONTROL_COMMANDS.ko.md](./CONTROL_COMMANDS.ko.md)**에 정리했습니다.
 
 ---
 
-## Runtime block self-healing
+## Runtime block 자동 복구
 
-The Notion page ID is the durable anchor. Terminal and Input block IDs are replaceable runtime references.
+Notion page ID는 고정 anchor로 보고, Terminal/Input code block ID는 교체 가능한 runtime reference로 관리합니다.
 
-Every `health_check_interval` seconds, each runtime block is validated independently.
+`health_check_interval`마다 Terminal과 Input을 각각 독립적으로 검사합니다.
 
-If one block is deleted, trashed, invalid, or moved away from its expected position:
+한쪽 블록만 삭제되거나 trash로 이동하거나 잘못된 위치로 이동한 경우:
 
-1. the healthy block is kept unchanged;
-2. only the damaged block is recreated;
-3. it is inserted back at its original section;
-4. only the changed block ID is persisted to `config.toml`.
+1. 정상 블록은 그대로 유지합니다.
+2. 문제가 있는 블록만 다시 생성합니다.
+3. 원래 Terminal/Input section 위치에 다시 삽입합니다.
+4. 변경된 block ID만 `config.toml`에 반영합니다.
 
-If both runtime blocks are removed, both are recreated.
+두 블록을 모두 삭제하면 둘 다 복구합니다.
 
-If the stable Terminal/Input anchor sections are also removed, recovery falls back to creating a fresh runtime section at the end of the page.
+Terminal/Input section 자체까지 삭제된 경우에는 원래 위치를 알 수 없으므로 페이지 하단에 새 runtime section을 생성하는 fallback을 사용합니다.
 
-If the page itself is deleted or inaccessible, the daemon stops instead of silently creating another page.
+페이지 자체가 삭제되거나 접근 불가능한 경우에는 새 페이지를 임의 생성하지 않고 daemon을 중단합니다.
 
-To intentionally recreate a deleted full control page, run:
+메인 제어 페이지 자체를 의도적으로 다시 만들려면:
 
 ```bash
 t4g reinit
 t4g daemon restart
 ```
 
-`reinit` preserves the existing local terminal/browser settings and replaces the Notion page and runtime block IDs in the config.
+`reinit`은 기존 로컬 terminal/browser 설정은 유지하고 Notion page와 runtime block ID만 새 값으로 교체합니다.
 
 ---
 
 ## PTY sandbox (srt)
 
-By default the shell runs with the full permissions of the user running the daemon. Setting `sandbox.enabled = true` runs it inside [Anthropic Sandbox Runtime (srt)](https://github.com/anthropic-experimental/sandbox-runtime), the sandbox runtime behind Claude Code's sandboxed Bash. t4g does not reimplement the sandbox: it translates `[sandbox]` into an srt settings file and launches the shell through srt.
+기본적으로 셸은 daemon을 실행한 사용자 권한 그대로 동작합니다. `sandbox.enabled = true`로 설정하면 Claude Code의 sandbox Bash가 사용하는 런타임인 [Anthropic Sandbox Runtime (srt)](https://github.com/anthropic-experimental/sandbox-runtime) 안에서 셸을 실행합니다. t4g가 sandbox를 직접 구현하지 않고, `[sandbox]` 설정을 srt settings 파일로 변환한 뒤 srt를 통해 셸을 띄웁니다.
 
 ```text
-sandbox.enabled = false   →  bash                                  (srt not needed)
+sandbox.enabled = false   →  bash                                  (srt 불필요)
 sandbox.enabled = true    →  srt -s ~/.cache/notion_is_terminal/srt-settings.json \
                                -- script -qfec "bash --rcfile … -i" /dev/null
 ```
 
-srt applies three layers:
+srt가 적용하는 세 가지:
 
-| Layer | What it does |
+| 계층 | 동작 |
 | --- | --- |
-| Filesystem | bubblewrap mounts: writes denied except allowed paths; selected paths hidden |
-| Network | the shell gets its own network namespace; all traffic goes through srt's proxy, which only lets `allowed_domains` through |
-| Credentials | configured files and environment variables are replaced by `fake_value_<uuid>` inside the shell; the proxy swaps in the real value on requests to allowed hosts |
+| 파일시스템 | bubblewrap mount: 허용한 경로 외 쓰기 차단, 지정한 경로 숨김 |
+| 네트워크 | 셸을 별도 네트워크 namespace에서 실행. 모든 요청은 srt 프록시를 거치며 `allowed_domains`만 통과 |
+| Credential | 설정한 파일·환경변수를 셸 안에서는 `fake_value_<uuid>`로 바꾸고, 허용된 host로 나가는 요청에서 프록시가 실제 값으로 치환 |
 
-`script` gives the shell a controlling terminal inside srt's session, so job control and Ctrl-C keep working. Terminal resize (`:rs`) is relayed to it as well.
+`script`가 srt 세션 안에서 셸에 제어 터미널을 제공하므로 job control과 Ctrl-C가 그대로 동작하고, 터미널 크기 변경(`:rs`)도 전달됩니다.
 
-### Quick start
+### 빠른 시작
 
 ```bash
-# 1. install (Node.js 22.12+)
+# 1. 설치 (Node.js 22.12+)
 sudo apt install -y bubblewrap socat ripgrep util-linux
 npm install -g @anthropic-ai/sandbox-runtime@0.0.78
 
-# 2. enable: answer "y" to "Enable sandbox" in `t4g init`,
-#    or set `enabled = true` under [sandbox] in config.toml
+# 2. 켜기: `t4g init`의 "Enable sandbox"에 y로 답하거나,
+#    config.toml의 [sandbox]에 enabled = true 설정
 
-# 3. check and restart
-t4g doctor            # checks srt, bwrap, socat, rg, script and runs a smoke test through srt
+# 3. 확인 후 재시작
+t4g doctor            # srt, bwrap, socat, rg, script 확인 + srt로 smoke test 실행
 t4g daemon restart
 ```
 
-If the sandbox is enabled and a tool is missing, the daemon refuses to start, writes `[SANDBOX UNAVAILABLE]` with the install command into the Notion Input block, and logs the same message. With `enabled = false` none of these tools are needed. `srt_path` points at a specific `srt` binary; empty means `srt` on `PATH`.
+sandbox를 켰는데 도구가 없으면 daemon이 시작을 거부하고, Notion Input 블록에 설치 명령이 담긴 `[SANDBOX UNAVAILABLE]` 메시지를 쓰며 로그에도 남깁니다. `enabled = false`이면 위 도구는 필요 없습니다. `srt_path`로 특정 `srt` 실행 파일을 지정할 수 있고, 비워두면 `PATH`에서 찾습니다.
 
-### Filesystem
+### 파일시스템
 
-srt denies writes by default and allows reads by default.
+srt는 쓰기를 기본 차단하고, 읽기는 기본 허용합니다.
 
-| Setting | Effect |
+| 설정 | 동작 |
 | --- | --- |
-| `read_only = false`, `workspace = false` | Whole host readable and writable (`allowWrite = ["/"]`), except srt's protected files. |
-| `read_only = true`, `workspace = false` | Whole host readable, nothing writable except `allow_write` entries. |
-| `read_only = false`, `workspace = true` | `/home`, `/root`, `/mnt` and `/media` are hidden; only `workspace_path` is visible and writable. The shell starts in `workspace_path`. |
-| `read_only = true`, `workspace = true` | Same, but the workspace is read-only too. |
-| `allow_read` | Paths kept readable inside hidden areas, e.g. `~/.nvm` or `~/.local/bin` for tools installed under the home directory in workspace mode. srt's own package is always kept readable. |
-| `allow_write` | Extra writable paths, e.g. `~/.cache`, `~/.npm`, `~/.local`. |
-| `deny_write` | Paths kept read-only inside writable areas (wins over `allow_write`). |
-| `deny_read` | Paths hidden from the shell. |
+| `read_only = false`, `workspace = false` | host 전체 읽기·쓰기 가능(`allowWrite = ["/"]`). 단, srt 보호 파일은 제외 |
+| `read_only = true`, `workspace = false` | host 전체 읽기 가능, `allow_write` 외에는 쓰기 불가 |
+| `read_only = false`, `workspace = true` | `/home`, `/root`, `/mnt`, `/media`를 숨기고 `workspace_path`만 보이며 쓰기 가능. 셸은 `workspace_path`에서 시작 |
+| `read_only = true`, `workspace = true` | 위와 같되 workspace도 read-only |
+| `allow_read` | 숨겨진 영역 안에서 읽기를 다시 허용할 경로. workspace 모드에서 홈 디렉터리 아래 설치한 도구(예: `~/.nvm`, `~/.local/bin`)를 쓸 때 지정. srt 자체 패키지는 자동으로 허용 |
+| `allow_write` | 추가로 쓰기 허용할 경로. 예: `~/.cache`, `~/.npm`, `~/.local` |
+| `deny_write` | 쓰기 가능한 영역 안에서 read-only로 둘 경로 (`allow_write`보다 우선) |
+| `deny_read` | 셸에서 숨길 경로 |
 
-- Relative paths resolve against `workspace_path` in workspace mode, otherwise against `cwd`.
-- On Linux, `allow_write`/`deny_write` take literal paths (no globs), and create/modify/delete are not distinguished.
-- srt always blocks writes to shell rc files, `.gitconfig`, `.git/hooks`, `.git/config`, `.vscode/`, `.idea/` and similar files, even inside writable paths.
-- Temporary files go to srt's writable `TMPDIR` (`/tmp/claude`).
-- Filesystem rules are fixed when the shell starts; run `t4g daemon restart` after changing them.
+- 상대 경로는 workspace 모드에서는 `workspace_path`, 그 외에는 `cwd` 기준입니다.
+- Linux에서 `allow_write`/`deny_write`는 실제 경로만 받으며(glob 불가), 생성·수정·삭제를 구분하지 않습니다.
+- srt는 쓰기 가능한 경로 안이라도 셸 rc 파일, `.gitconfig`, `.git/hooks`, `.git/config`, `.vscode/`, `.idea/` 등의 쓰기를 항상 막습니다.
+- 임시 파일은 srt가 지정한 쓰기 가능한 `TMPDIR`(`/tmp/claude`)에 만들어집니다.
+- 파일시스템 규칙은 셸 시작 시 고정되므로 변경 후 `t4g daemon restart`가 필요합니다.
 
-### Network
+### 네트워크
 
-- Only `allowed_domains` are reachable. `*.example.com` wildcards are allowed; a bare `*` is rejected by srt.
-- `denied_domains` wins over `allowed_domains`.
-- Blocked requests fail with `Connection blocked by network allowlist` (HTTP) or `CONNECT tunnel failed, response 403` (HTTPS).
-- An empty list means no network at all.
+- `allowed_domains`에 있는 도메인만 접근할 수 있습니다. `*.example.com` 와일드카드는 가능하지만 `*` 단독은 srt가 거부합니다.
+- `denied_domains`가 `allowed_domains`보다 우선합니다.
+- 차단된 요청은 `Connection blocked by network allowlist`(HTTP) 또는 `CONNECT tunnel failed, response 403`(HTTPS)로 실패합니다.
+- 목록이 비어 있으면 네트워크가 완전히 차단됩니다.
 
 ### Credential masking
 
@@ -673,44 +681,44 @@ on_extract_no_match = "deny"
 inject_hosts = ["api.openai.com"]
 ```
 
-What the shell sees, and what reaches the server:
+셸에서 보이는 값과 서버에 도착하는 값:
 
 ```text
 $ echo $GITHUB_TOKEN
 fake_value_f38d04a3-6216-492f-96b4-d49ba120db07
 
 $ curl -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/user
-  → srt proxy replaces the sentinel → api.github.com receives the real token
+  → srt 프록시가 sentinel을 실제 값으로 치환 → api.github.com은 실제 토큰을 받음
 ```
 
-- `mode = "mask"`: the value is replaced by a per-session `fake_value_<uuid>` sentinel. srt substitutes the real value only on requests to the credential's `inject_hosts`. If `inject_hosts` is omitted, srt defaults it to every `allowed_domains` host.
-- `mode = "deny"`: the file is unreadable / the variable is unset. Use this when the credential must never be available to sandboxed commands or injected outbound.
-- Current srt rejects `inject_hosts = []` for `mode = "mask"`. Terminal4GPTWeb rejects the same configuration instead of silently widening it to all allowed domains.
-- `extract`: only capture group 1 of the regex is masked (exactly one group required) and the rest stays intact, e.g. just the password inside `DATABASE_URL`. Without `extract` the whole file or value is replaced.
-- `on_extract_no_match`: `warn` (leave readable, fail-open), `deny` (hide, fail-closed) or `error` (refuse to start).
-- `tls_terminate = true` is required for masking so substitution also works inside HTTPS requests; srt sets CA trust variables (`SSL_CERT_FILE`, …) in the sandbox. `allow_plaintext_inject = true` is the explicit opt-out and only injects into plain-HTTP requests.
-- Only HTTP(S) traffic through the proxy is rewritten. SSH, database wire protocols and other raw TCP connections receive the fake value.
+- `mode = "mask"`: 값이 세션마다 새로 만든 `fake_value_<uuid>`로 바뀝니다. 실제 값은 해당 credential의 `inject_hosts`로 가는 요청에서만 치환됩니다. `inject_hosts`를 생략하면 srt가 모든 `allowed_domains`를 기본 범위로 사용합니다.
+- `mode = "deny"`: 파일은 읽을 수 없고, 환경변수는 제거됩니다. credential을 sandbox에서 사용하거나 외부로 주입할 수 없게 하려면 이 모드를 사용합니다.
+- 현재 srt는 `mode = "mask"`에서 `inject_hosts = []`를 거부합니다. Terminal4GPTWeb도 이를 설정 오류로 처리해 빈 배열이 의도치 않게 전체 허용으로 넓어지는 것을 막습니다.
+- `extract`: 정규식의 capture group 1만 masking하고 나머지는 그대로 둡니다(정확히 하나의 group 필요). 예를 들어 `DATABASE_URL` 안의 비밀번호만 가릴 수 있습니다. `extract`가 없으면 파일이나 값 전체를 바꿉니다.
+- `on_extract_no_match`: `warn`(그대로 노출, fail-open), `deny`(숨김, fail-closed), `error`(시작 거부)
+- masking을 쓰려면 `tls_terminate = true`가 필요합니다. 그래야 HTTPS 요청 안에서도 치환되며, srt가 sandbox에 CA 신뢰 환경변수(`SSL_CERT_FILE` 등)를 설정합니다. `allow_plaintext_inject = true`는 이를 명시적으로 끄는 옵션으로, 평문 HTTP 요청에만 실제 값을 넣습니다.
+- 프록시를 거치는 HTTP(S) 트래픽만 치환됩니다. SSH, DB 프로토콜 등 일반 TCP 연결에는 가짜 값이 그대로 전달됩니다.
 
-### Sandbox limitations
+### Sandbox 제약
 
 > [!IMPORTANT]
-> The sandboxed shell has its own network namespace. A dev server started **inside** the sandboxed terminal listens on the sandbox's loopback and is **not reachable from the Playwright browser** (`:b goto http://localhost:…`), which runs outside the sandbox. For browser E2E against a local server, start that server outside the sandbox or disable the sandbox for that workflow.
+> sandbox 셸은 별도 네트워크 namespace에서 실행됩니다. sandbox 터미널 **안에서** 띄운 개발 서버는 sandbox 내부 loopback에서만 열리므로, sandbox 밖에서 동작하는 **Playwright 브라우저(`:b goto http://localhost:…`)로는 접근할 수 없습니다.** 로컬 서버 대상 브라우저 E2E는 서버를 sandbox 밖에서 띄우거나, 해당 작업에서는 sandbox를 끄세요.
 
-- Network allowlist changes and filesystem changes both need `t4g daemon restart`.
-- Masking only protects configured files and variables; it is not a secret scanner.
-- Terminal4GPTWeb is currently tested against `@anthropic-ai/sandbox-runtime` **0.0.78**. srt is still in the 0.0.x line, so use this pinned version unless a newer version has been verified with this project.
+- 네트워크 허용 목록과 파일시스템 규칙 모두 변경 후 `t4g daemon restart`가 필요합니다.
+- masking은 설정한 파일과 환경변수만 보호하며 secret scanner가 아닙니다.
+- Terminal4GPTWeb은 현재 `@anthropic-ai/sandbox-runtime` **0.0.78** 기준으로 검증했습니다. srt가 아직 0.0.x 계열이므로, 더 최신 버전을 이 프로젝트에서 다시 검증하기 전까지는 이 버전 사용을 권장합니다.
 
 ---
 
-## Configuration
+## 설정
 
-Default:
+기본 경로:
 
 ```text
 ~/.config/notion_is_terminal/config.toml
 ```
 
-Example:
+예시:
 
 ```toml
 [notion]
@@ -783,11 +791,11 @@ vision_quality = 35
 vision_max_base64_chars = 160000
 ```
 
-`NOTION_TOKEN` overrides the token stored in the config.
+환경변수 `NOTION_TOKEN`이 있으면 config의 token보다 우선합니다.
 
-The `[sandbox]` keys are explained in [PTY sandbox (srt)](#pty-sandbox-srt).
+`[sandbox]` 항목 설명은 [PTY sandbox (srt)](#pty-sandbox-srt)를 참고하세요.
 
-After config changes:
+config 수정 후:
 
 ```bash
 t4g daemon restart
@@ -795,91 +803,93 @@ t4g daemon restart
 
 ---
 
-## Diagnostics
+## 진단
 
 ```bash
 t4g doctor
 ```
 
-Checks config, Linux / WSL environment, shell path, working directory, Notion page access, and both runtime blocks. With `sandbox.enabled = true` it also lists the effective sandbox mode, network allowlist and credential rules, checks `srt`, `bwrap`, `socat`, `rg` and `script`, and runs `true` through srt with the configured policy.
+config, Linux / WSL 환경, shell 경로, working directory, Notion page 접근, Terminal/Input block을 확인합니다. `sandbox.enabled = true`이면 sandbox 모드·네트워크 허용 목록·credential 규칙을 표시하고, `srt`·`bwrap`·`socat`·`rg`·`script` 설치를 확인한 뒤 설정된 정책으로 srt에서 `true`를 실행해 봅니다.
 
 ---
 
-## Security model
+## 보안
 
-Terminal4GPTWeb supports an optional PTY sandbox based on [Anthropic Sandbox Runtime (srt)](https://github.com/anthropic-experimental/sandbox-runtime), the same runtime behind Claude Code's sandbox.
+Terminal4GPTWeb은 Claude Code sandbox와 같은 런타임인 [Anthropic Sandbox Runtime (srt)](https://github.com/anthropic-experimental/sandbox-runtime) 기반의 **선택적 PTY sandbox**를 지원합니다.
 
 ```text
 enabled = false
-  → unrestricted PTY as the daemon user (srt not required)
+  → daemon 사용자 권한 그대로 실행 (srt 불필요)
 
 enabled = true, read_only = false, workspace = false
-  → host readable and writable, network limited to allowed_domains
+  → host 읽기·쓰기 가능, 네트워크는 allowed_domains만
 
 enabled = true, read_only = true, workspace = false
-  → read-only host view
+  → host read-only
 
 enabled = true, workspace = true
-  → user data hidden except workspace_path (read/write, or read-only with read_only = true)
+  → workspace_path 외 사용자 데이터 숨김 (workspace는 RW, read_only = true면 RO)
 ```
 
-With the sandbox on:
+sandbox를 켜면:
 
-- writes are allowed only where configured, and srt always protects shell rc files, git hooks/config and editor config;
-- outbound network is limited to `allowed_domains` through srt's proxy;
-- configured credential files and environment variables are replaced by `fake_value_<uuid>` sentinels, and the real value is only sent to the credential's allowed hosts.
+- 설정한 경로에만 쓸 수 있고, 셸 rc 파일·git hooks/config·에디터 설정은 srt가 항상 보호합니다.
+- 외부 네트워크는 srt 프록시를 통해 `allowed_domains`로만 나갈 수 있습니다.
+- 설정한 credential 파일과 환경변수는 `fake_value_<uuid>`로 바뀌고, 실제 값은 해당 credential의 허용 host로만 전달됩니다.
 
-Masking is not a universal secret scanner: only configured files and variables are protected.
+masking은 universal secret scanner가 아니며, 설정한 파일과 환경변수만 보호합니다.
 
-Recommended precautions:
+권장사항:
 
-- run the daemon as a dedicated non-root user;
-- prefer `enabled = true` with workspace isolation for coding workflows;
-- keep `allowed_domains` to what the work needs;
-- protect known credential files and environment variables with mask or deny rules;
-- never send sudo passwords or raw credentials through Notion Input;
-- restrict access to the generated Notion page;
-- treat Docker sockets or other privileged IPC endpoints as sandbox escapes if you expose them manually.
-
----
-
-## Verification
-
-The regression suite currently covers:
-
-- Search Page / URL parent-page wizard paths;
-- persistent PTY behavior and terminal controls;
-- sandbox on/off launch paths and the missing-`srt` error;
-- translation of read-only / workspace / allow-write / deny rules, network allowlists and credential rules into srt settings;
-- Notion runtime block handling and browser control helpers.
-
-GitHub Actions runs the test suite on Python 3.11, 3.12 and 3.13.
-
-The sandbox path has been exercised end to end through `PTYSession → pty.fork() → srt → script → bash`: environment-variable and file masking, sentinel→real substitution on outbound HTTP requests, the network allowlist, deny-write, workspace isolation, Ctrl-C and terminal resize. On WSL2 Ubuntu (srt 0.0.78 installed through nvm) it was also driven through the Notion control page: HTTPS substitution with `tls_terminate` (the shell saw `fake_value_…`, the server received the real value), blocked HTTPS to a non-allowed domain, workspace isolation and resize. Browser smoke testing has been verified through Notion with Playwright and the Vision payload observation ID.
-
-Destructive recovery cases such as deleting the live production control page are covered by automated tests rather than repeatedly deleting the active user page during routine regression runs.
+- daemon은 전용 non-root 사용자로 실행
+- 개발 작업은 가능하면 `enabled = true` + workspace isolation 사용
+- `allowed_domains`는 작업에 필요한 도메인으로만 제한
+- 알려진 credential 파일과 환경변수에는 mask 또는 deny 적용
+- sudo password/token/private key를 Notion Input에 직접 넣지 않기
+- 생성된 Notion control page의 접근 권한 제한
+- Docker socket 같은 privileged IPC를 수동으로 노출하면 sandbox 경계를 우회할 수 있다고 간주
 
 ---
 
-## Limitations
+## 검증 범위
 
-Notion is not a low-latency terminal transport. Terminal semantics are preserved, but every interaction still passes through the Notion API.
+현재 회귀 테스트에는 다음이 포함됩니다.
 
-Currently not supported as a native Notion terminal experience:
+- Search Page / URL Parent Page wizard
+- persistent PTY와 terminal control
+- sandbox on/off 실행 경로와 `srt` 미설치 오류
+- read-only / workspace / allow-write / deny 규칙, 네트워크 허용 목록, credential 규칙의 srt settings 변환
+- Notion runtime block 처리와 browser control helper
 
-- terminal mouse reporting (Playwright browser mouse control is supported)
+GitHub Actions에서는 Python 3.11, 3.12, 3.13으로 전체 테스트를 실행합니다.
+
+sandbox는 실제 `PTYSession → pty.fork() → srt → script → bash` 경로로 환경변수·파일 masking, 외부 HTTP 요청에서의 sentinel→실제 값 치환, 네트워크 허용 목록, deny-write, workspace 격리, Ctrl-C, 터미널 크기 변경까지 E2E 검증했습니다. WSL2 Ubuntu(nvm으로 설치한 srt 0.0.78)에서도 Notion control page를 통해 `tls_terminate` HTTPS 치환(셸에서는 `fake_value_…`, 서버에는 실제 값 도착), 허용되지 않은 도메인의 HTTPS 차단, workspace 격리, 크기 변경을 확인했습니다. Browser는 Notion을 거쳐 Playwright navigation과 Vision payload observation ID까지 smoke test했습니다.
+
+실사용 중인 Notion control page 자체를 삭제하는 것처럼 파괴적인 복구 시나리오는 매 회귀 테스트마다 실제 페이지를 지우는 대신 자동 테스트로 검증합니다.
+
+---
+
+## 한계
+
+Notion은 저지연 터미널 전송 프로토콜이 아닙니다.
+
+터미널 의미론은 유지하지만 모든 입력과 화면 갱신이 Notion API를 거치므로 로컬 터미널보다 지연이 큽니다.
+
+현재 지원하지 않거나 Notion에서 자연스럽게 표현되지 않는 기능:
+
+- 터미널 mouse reporting (Playwright browser mouse control은 지원)
 - sixel / kitty graphics
 - pixel graphics
 - terminal color styling
-- clipboard escape sequences
+- clipboard escape sequence
 - sub-second keystroke streaming
 - multiple simultaneous PTY sessions
-- automatic startup after WSL / Windows restart
-- reaching a server started inside the srt sandbox from the Playwright browser (see [Sandbox limitations](#sandbox-limitations))
+- WSL / Windows 재시작 후 자동 실행
+- srt sandbox 안에서 띄운 서버에 Playwright 브라우저로 접속 ([Sandbox 제약](#sandbox-제약) 참고)
 
 ---
 
-## Development
+## 개발
 
 ```bash
 pip install -e . pytest
@@ -887,7 +897,7 @@ pytest
 python -m compileall -q terminal4gptweb tests
 ```
 
-GitHub Actions tests Python 3.11, 3.12, and 3.13.
+GitHub Actions에서 Python 3.11, 3.12, 3.13을 테스트합니다.
 
 ---
 

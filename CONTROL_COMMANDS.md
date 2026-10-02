@@ -1,6 +1,6 @@
 # Terminal4GPTWeb Control Command Reference
 
-[한국어](./CONTROL_COMMANDS.ko.md) · [Main README](./README.md)
+[한국어](./CONTROL_COMMANDS.ko.md) · [Main README](./README.en.md)
 
 This document is the complete code-level reference for every control command currently exposed by Terminal4GPTWeb.
 

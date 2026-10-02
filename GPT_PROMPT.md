@@ -1,6 +1,6 @@
 # Terminal4GPTWeb GPT Bootstrap Prompt
 
-[한국어](./GPT_PROMPT.ko.md) · [Main README](./README.md) · [Control Command Reference](./CONTROL_COMMANDS.md)
+[한국어](./GPT_PROMPT.ko.md) · [Main README](./README.en.md) · [Control Command Reference](./CONTROL_COMMANDS.md)
 
 Paste the prompt below as the first message in a new ChatGPT Web conversation.
 
