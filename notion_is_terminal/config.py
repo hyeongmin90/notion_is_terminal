@@ -40,11 +40,20 @@ class CredentialFileSettings:
 
 @dataclass(slots=True)
 class SandboxSettings:
-    mode: str = "none"
+    enabled: bool = False
+    workspace_enabled: bool = False
     workspace: str = ""
+    masking_enabled: bool = False
     deny_read: list[str] = field(default_factory=list)
     deny_write: list[str] = field(default_factory=list)
     credential_files: list[CredentialFileSettings] = field(default_factory=list)
+
+    @property
+    def mode(self) -> str:
+        """Compatibility/effective mode derived from explicit feature toggles."""
+        if not self.enabled:
+            return "none"
+        return "workspace" if self.workspace_enabled else "read_only"
 
 
 @dataclass(slots=True)
@@ -128,9 +137,20 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         if isinstance(item, dict)
     ]
 
+    legacy_mode = str(sandbox_raw.get("mode", "none"))
+    enabled = bool(sandbox_raw.get("enabled", legacy_mode != "none"))
+    workspace_enabled = bool(
+        sandbox_raw.get("workspace_enabled", legacy_mode == "workspace")
+    )
+    masking_enabled = bool(
+        sandbox_raw.get("masking_enabled", bool(credential_files))
+    )
+
     sandbox = SandboxSettings(
-        mode=str(sandbox_raw.get("mode", "none")),
+        enabled=enabled,
+        workspace_enabled=workspace_enabled,
         workspace=str(sandbox_raw.get("workspace", "")),
+        masking_enabled=masking_enabled,
         deny_read=[str(value) for value in sandbox_raw.get("deny_read", [])],
         deny_write=[str(value) for value in sandbox_raw.get("deny_write", [])],
         credential_files=credential_files,
@@ -219,8 +239,10 @@ def write_config(config: AppConfig, path: Path | str = DEFAULT_CONFIG_PATH) -> P
             f"source_bashrc = {'true' if config.terminal.source_bashrc else 'false'}",
             "",
             "[sandbox]",
-            f"mode = {_toml_string(config.terminal.sandbox.mode)}",
+            f"enabled = {'true' if config.terminal.sandbox.enabled else 'false'}",
+            f"workspace_enabled = {'true' if config.terminal.sandbox.workspace_enabled else 'false'}",
             f"workspace = {_toml_string(config.terminal.sandbox.workspace)}",
+            f"masking_enabled = {'true' if config.terminal.sandbox.masking_enabled else 'false'}",
             f"deny_read = {json.dumps(config.terminal.sandbox.deny_read, ensure_ascii=False)}",
             f"deny_write = {json.dumps(config.terminal.sandbox.deny_write, ensure_ascii=False)}",
             "",
@@ -272,9 +294,7 @@ def _validate_terminal(settings: TerminalSettings) -> None:
 
 
 def _validate_sandbox(settings: SandboxSettings) -> None:
-    if settings.mode not in {"none", "read_only", "workspace"}:
-        raise ValueError("sandbox.mode must be one of: none, read_only, workspace")
-    if settings.mode == "workspace" and settings.workspace:
+    if settings.workspace_enabled and settings.workspace:
         workspace = Path(settings.workspace).expanduser()
         if not workspace.is_absolute():
             raise ValueError("sandbox.workspace must be an absolute path")
@@ -285,9 +305,6 @@ def _validate_sandbox(settings: SandboxSettings) -> None:
         for value in values:
             if not value or "\x00" in value or "\n" in value or "\r" in value:
                 raise ValueError(f"{name} entries must be non-empty single-line paths")
-
-    if settings.credential_files and settings.mode == "none":
-        raise ValueError("sandbox credential masking requires read_only or workspace mode")
 
     for item in settings.credential_files:
         if not item.path or any(ch in item.path for ch in ("\x00", "\n", "\r")):
