@@ -30,6 +30,13 @@ class NotionError(RuntimeError):
 
 
 @dataclass(slots=True)
+class NotionPageSearchResult:
+    page_id: str
+    title: str
+    url: str
+
+
+@dataclass(slots=True)
 class CreatedTerminalPage:
     page_id: str
     page_url: str
@@ -100,6 +107,35 @@ class NotionClient:
 
     def get_page(self, page_id: str) -> dict[str, Any]:
         return self._request("GET", f"/pages/{page_id}")
+
+    def search_pages(self, query: str = "", *, limit: int = 10) -> list[NotionPageSearchResult]:
+        if limit < 1 or limit > 100:
+            raise ValueError("limit must be between 1 and 100")
+
+        payload: dict[str, Any] = {
+            "filter": {"property": "object", "value": "page"},
+            "sort": {"direction": "descending", "timestamp": "last_edited_time"},
+            "page_size": limit,
+        }
+        query = query.strip()
+        if query:
+            payload["query"] = query
+
+        response = self._request("POST", "/search", json=payload)
+        pages: list[NotionPageSearchResult] = []
+        for item in response.get("results", []):
+            if item.get("object") != "page" or not item.get("id"):
+                continue
+            pages.append(
+                NotionPageSearchResult(
+                    page_id=str(item["id"]),
+                    title=page_title(item) or "(untitled)",
+                    url=str(item.get("url", "")),
+                )
+            )
+            if len(pages) >= limit:
+                break
+        return pages
 
     def get_block(self, block_id: str) -> dict[str, Any]:
         return self._request("GET", f"/blocks/{block_id}")
@@ -685,6 +721,19 @@ class NotionClient:
             )
 
         raise NotionError("Notion request failed after retries.")
+
+
+def page_title(page: dict[str, Any]) -> str:
+    properties = page.get("properties", {})
+    if not isinstance(properties, dict):
+        return ""
+
+    for prop in properties.values():
+        if not isinstance(prop, dict) or prop.get("type") != "title":
+            continue
+        items = prop.get("title", [])
+        return "".join(str(item.get("plain_text", "")) for item in items).strip()
+    return ""
 
 
 def block_is_usable_image(block: dict[str, Any] | None) -> bool:
