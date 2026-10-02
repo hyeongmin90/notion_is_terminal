@@ -10,6 +10,7 @@ from .config import (
     BrowserSettings,
     DEFAULT_CONFIG_PATH,
     NotionSettings,
+    SandboxSettings,
     TerminalSettings,
     load_config,
     write_config,
@@ -32,6 +33,7 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         parent_page_id = _choose_parent_page(notion)
     shell = _prompt("Shell", shutil.which("bash") or "/bin/bash")
     cwd = str(Path(_prompt("Initial working directory", str(Path.home()))).expanduser().resolve())
+    sandbox = _prompt_sandbox(cwd)
     user = _prompt("Prompt user", os.environ.get("USER", "user"))
     host = _prompt("Prompt host", "ubuntu")
     columns = int(_prompt("Terminal columns", "120"))
@@ -53,6 +55,7 @@ def run_init(config_path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         health_check_interval=10.0,
         show_cursor=True,
         source_bashrc=True,
+        sandbox=sandbox,
     )
     browser = BrowserSettings()
 
@@ -133,6 +136,46 @@ def _choose_parent_page(notion: NotionClient) -> str:
 def _enter_parent_page() -> str:
     value = input("Parent Notion page URL or page ID: ").strip()
     return parse_page_id(value)
+
+
+def _prompt_sandbox(cwd: str) -> SandboxSettings:
+    print("\nPTY sandbox")
+    print("  1. None — current behavior")
+    print("  2. Read only — host filesystem is readable but not writable; /tmp is ephemeral")
+    print("  3. Workspace — only the selected workspace is exposed read/write")
+    while True:
+        choice = _prompt("Select", "1").strip()
+        if choice in {"1", "2", "3"}:
+            break
+        print("Invalid selection. Choose 1, 2, or 3.")
+
+    mode = {"1": "none", "2": "read_only", "3": "workspace"}[choice]
+    workspace = ""
+    if mode == "workspace":
+        workspace = str(
+            Path(_prompt("Sandbox workspace", cwd)).expanduser().resolve()
+        )
+
+    deny_read = _prompt_path_list(
+        "Deny read paths (comma-separated, optional)",
+    )
+    deny_write = _prompt_path_list(
+        "Deny write paths (comma-separated, optional)",
+    )
+
+    return SandboxSettings(
+        mode=mode,
+        workspace=workspace,
+        deny_read=deny_read,
+        deny_write=deny_write,
+    )
+
+
+def _prompt_path_list(label: str) -> list[str]:
+    value = input(f"{label}: ").strip()
+    if not value:
+        return []
+    return [part.strip() for part in value.split(",") if part.strip()]
 
 
 def _create_notion_surfaces(
