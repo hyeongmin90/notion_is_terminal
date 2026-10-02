@@ -1,6 +1,6 @@
 # Terminal4GPTWeb
 
-[English](./README.md) · [상세 설치 가이드](./INSTALL.ko.md) · [English installation](./INSTALL.md)
+[English](./README.md) · [제어 명령 전체 레퍼런스](./CONTROL_COMMANDS.ko.md) · [English control commands](./CONTROL_COMMANDS.md) · [상세 설치 가이드](./INSTALL.ko.md) · [English installation](./INSTALL.md)
 
 **GPT 웹에 로컬 WSL/Linux 셸 서버를 직접 노출하지 않고도 실제 터미널 도구를 연결합니다.**
 
