@@ -27,16 +27,16 @@ classifiers = [
 ]
 
 [project.scripts]
-terminal4gptweb = "notion_is_terminal.cli:main"
-t4g = "notion_is_terminal.cli:main"
-notion-terminal = "notion_is_terminal.cli:main"
-nit = "notion_is_terminal.cli:main"
+terminal4gptweb = "terminal4gptweb.cli:main"
+t4g = "terminal4gptweb.cli:main"
+notion-terminal = "terminal4gptweb.cli:main"
+nit = "terminal4gptweb.cli:main"
 
 [project.urls]
 Repository = "https://github.com/hyeongmin90/terminal4gptweb"
 
 [tool.setuptools.packages.find]
-include = ["notion_is_terminal*"]
+include = ["terminal4gptweb*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

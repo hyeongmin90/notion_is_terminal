@@ -886,7 +886,7 @@ Currently not supported as a native Notion terminal experience:
 ```bash
 pip install -e . pytest
 pytest
-python -m compileall -q notion_is_terminal tests
+python -m compileall -q terminal4gptweb tests
 ```
 
 GitHub Actions tests Python 3.11, 3.12, and 3.13.

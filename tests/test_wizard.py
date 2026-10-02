@@ -1,5 +1,5 @@
-from notion_is_terminal.notion import NotionPageSearchResult
-from notion_is_terminal.wizard import _choose_parent_page
+from terminal4gptweb.notion import NotionPageSearchResult
+from terminal4gptweb.wizard import _choose_parent_page
 
 
 class FakeNotion:

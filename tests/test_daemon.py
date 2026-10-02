@@ -1,4 +1,4 @@
-from notion_is_terminal.daemon import sanitize_terminal_for_notion
+from terminal4gptweb.daemon import sanitize_terminal_for_notion
 
 
 def test_sanitize_terminal_for_notion_leaves_normal_text_unchanged():
