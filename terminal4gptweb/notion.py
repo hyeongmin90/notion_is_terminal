@@ -897,6 +897,10 @@ def runtime_blocks_are_in_place(
 def terminal_page_children(terminal_text: str, input_text: str) -> list[dict[str, Any]]:
     return [
         callout_payload(
+            "For AI: Read the Terminal4GPTWeb Help page before using this control surface.",
+            "🤖",
+        ),
+        callout_payload(
             "Live local terminal and browser control surface. Anything submitted in Input runs with the permissions of the local Linux/WSL user.",
             "⚠️",
         ),

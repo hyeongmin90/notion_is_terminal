@@ -212,6 +212,7 @@ def test_terminal_page_children_are_compact():
         if item.get("type") in {"paragraph", "bulleted_list_item", "heading_2", "callout"}
         and item.get(item.get("type", ""), {}).get("rich_text")
     )
+    assert "For AI: Read the Terminal4GPTWeb Help page before using this control surface." in text
     assert "Quick Commands" in text
     assert "Browser open" in text
     assert "Common TUI recipes" not in text
