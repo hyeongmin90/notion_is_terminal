@@ -279,6 +279,11 @@ def _credential_rule(
             rule["onExtractNoMatch"] = item.on_extract_no_match
             if mask_duplicates:
                 rule["maskDuplicates"] = True
+        if item.inject_hosts == []:
+            raise ValueError(
+                "SRT does not support mode='mask' with an empty injectHosts list; "
+                "use mode='deny', omit inject_hosts, or specify at least one host."
+            )
         if item.inject_hosts is not None:
             rule["injectHosts"] = list(item.inject_hosts)
     return rule
