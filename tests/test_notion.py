@@ -1,4 +1,4 @@
-from notion_is_terminal.notion import (
+from app.notion import (
     MAX_RICH_TEXT_CHUNK,
     NotionClient,
     NotionError,
