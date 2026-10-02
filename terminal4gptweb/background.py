@@ -72,7 +72,7 @@ def start_daemon(config_path: Path | str = DEFAULT_CONFIG_PATH) -> int:
         [
             sys.executable,
             "-m",
-            "app",
+            "terminal4gptweb",
             "run",
             "--config",
             str(config_path),
@@ -222,7 +222,7 @@ def process_is_our_daemon(pid: int) -> bool:
         return True
 
     return (
-        (" app " in f" {cmdline} " or " notion_is_terminal " in f" {cmdline} ")
+        (" terminal4gptweb " in f" {cmdline} " or " notion_is_terminal " in f" {cmdline} ")
         and " run " in f" {cmdline} "
     )
 
