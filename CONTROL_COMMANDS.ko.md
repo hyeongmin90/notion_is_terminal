@@ -363,7 +363,7 @@ resize 시:
 
 ```
 
-현재 지원되는 browser subcommand는 정확히 다음 10종입니다.
+현재 인식하는 browser subcommand 이름은 다음 11개이며, `open`이 `goto`의 alias이므로 실제 동작 종류는 10개입니다.
 
 ```text
 goto
@@ -379,7 +379,7 @@ back
 reload
 ```
 
-`goto`와 `open`은 같은 기능이므로 실제 동작 종류는 9개입니다.
+`goto`와 `open`은 같은 navigation 동작입니다.
 
 첫 browser command에서 Chromium이 lazy start되고 daemon이 종료/restart될 때까지 같은 browser context/page를 유지합니다.
 
