@@ -728,7 +728,13 @@ deny_write = [".git"]
 [[sandbox.credentials.files]]
 path = ".env"
 mode = "mask"
-extract = '(?m)^(?:OPENAI_API_KEY|DATABASE_URL|JWT_SECRET)=(\\S+)height = 720
+extract = '(?m)^(?:OPENAI_API_KEY|DATABASE_URL|JWT_SECRET)=(\\S+)$'
+on_extract_no_match = "deny"
+mask_duplicates = false
+
+[browser]
+width = 1280
+height = 720
 headless = true
 timeout_ms = 15000
 settle_ms = 350
@@ -746,11 +752,14 @@ The security features are explicit switches. You can leave policy entries in the
 
 | Setting | Effect |
 | --- | --- |
-| `read_only = false, workspace = false, masking = false` | Direct, unrestricted PTY. Other sandbox settings are inactive. |
-| `read_only = true`, `workspace = false` | Read-only host filesystem; private writable `/tmp`. |
-| `read_only = false`, `workspace = true` | Only the configured workspace is exposed RW as `/workspace`; user data outside it is hidden. |
-| `masking = false` | Keep credential rules in config but do not apply them. |
-| `masking = true` | Apply configured credential file mask/deny policies. |
+| Setting | Effect |
+| --- | --- |
+| `read_only = false`, `workspace = false` | No filesystem isolation unless masking/deny rules activate bubblewrap. |
+| `read_only = true`, `workspace = false` | Host filesystem is visible read-only; `/tmp` is private and writable. |
+| `read_only = false`, `workspace = true` | Only `workspace_path` is exposed as writable `/workspace`. |
+| `read_only = true`, `workspace = true` | Only `workspace_path` is exposed, and `/workspace` itself is read-only. |
+| `masking = false` | Credential rules stay in config but are not applied. |
+| `masking = true` | Apply configured credential file mask/deny rules. |
 
 Credential `extract` regexes must contain exactly one capture group. Only capture group 1 is replaced with a per-PTY sentinel.
 
