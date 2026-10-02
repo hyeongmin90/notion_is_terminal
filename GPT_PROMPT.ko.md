@@ -1,6 +1,6 @@
 # Terminal4GPTWeb GPT 시작 프롬프트
 
-[English](./GPT_PROMPT.md) · [메인 README](./README.ko.md) · [제어 명령 전체 레퍼런스](./CONTROL_COMMANDS.ko.md)
+[English](./GPT_PROMPT.md) · [메인 README](./README.md) · [제어 명령 전체 레퍼런스](./CONTROL_COMMANDS.ko.md)
 
 아래 프롬프트를 새 ChatGPT Web 대화에 그대로 붙여 넣으면 됩니다.
 
