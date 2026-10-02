@@ -821,6 +821,28 @@ Recommended precautions:
 
 ---
 
+## Verification
+
+The regression suite currently covers:
+
+- config parsing and legacy config migration;
+- Search Page / URL parent-page wizard paths;
+- persistent PTY behavior and terminal controls;
+- read-only and workspace sandbox construction;
+- sandbox/workspace/masking ON/OFF switches;
+- deny-read and deny-write carve-outs;
+- whole-file and structured credential masking;
+- mask-duplicate behavior and no-match warn/deny/error policies;
+- Notion runtime block handling and browser control helpers.
+
+GitHub Actions runs the test suite on Python 3.11, 3.12 and 3.13.
+
+The sandbox and masking paths have also been exercised on WSL2 through the real `PTYSession → pty.fork() → bubblewrap → bash` path. Browser smoke testing has been verified through Notion with Playwright and the Vision payload observation ID.
+
+Destructive recovery cases such as deleting the live production control page are covered by automated tests rather than repeatedly deleting the active user page during routine regression runs.
+
+---
+
 ## Limitations
 
 Notion is not a low-latency terminal transport. Terminal semantics are preserved, but every interaction still passes through the Notion API.
