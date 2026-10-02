@@ -781,8 +781,9 @@ $ curl -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/user
   → srt proxy replaces the sentinel → api.github.com receives the real token
 ```
 
-- `mode = "mask"`: the value is replaced by a per-session `fake_value_<uuid>` sentinel. srt substitutes the real value only on requests to the credential's `inject_hosts` (default: every allowed domain), so one credential cannot be sent to another credential's host.
-- `mode = "deny"`: the file is unreadable / the variable is unset.
+- `mode = "mask"`: the value is replaced by a per-session `fake_value_<uuid>` sentinel. srt substitutes the real value only on requests to the credential's `inject_hosts`. If `inject_hosts` is omitted, srt defaults it to every `allowed_domains` host.
+- `mode = "deny"`: the file is unreadable / the variable is unset. Use this when the credential must never be available to sandboxed commands or injected outbound.
+- Current srt rejects `inject_hosts = []` for `mode = "mask"`. Terminal4GPTWeb rejects the same configuration instead of silently widening it to all allowed domains.
 - `extract`: only capture group 1 of the regex is masked (exactly one group required) and the rest stays intact, e.g. just the password inside `DATABASE_URL`. Without `extract` the whole file or value is replaced.
 - `on_extract_no_match`: `warn` (leave readable, fail-open), `deny` (hide, fail-closed) or `error` (refuse to start).
 - `tls_terminate = true` is required for masking so substitution also works inside HTTPS requests; srt sets CA trust variables (`SSL_CERT_FILE`, …) in the sandbox. `allow_plaintext_inject = true` is the explicit opt-out and only injects into plain-HTTP requests.
