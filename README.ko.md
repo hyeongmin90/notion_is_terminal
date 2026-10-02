@@ -896,7 +896,7 @@ Notion은 저지연 터미널 전송 프로토콜이 아닙니다.
 ```bash
 pip install -e . pytest
 pytest
-python -m compileall -q notion_is_terminal tests
+python -m compileall -q terminal4gptweb tests
 ```
 
 GitHub Actions에서 Python 3.11, 3.12, 3.13을 테스트합니다.
