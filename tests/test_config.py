@@ -44,7 +44,7 @@ def test_config_round_trip(tmp_path: Path):
                     CredentialFileSettings(
                         path=".env",
                         mode="mask",
-                        extract=r"(?m)^API_KEY=(\\S+)$",
+                        extract=r"(?m)^API_KEY=(\S+)$",
                         on_extract_no_match="deny",
                         mask_duplicates=True,
                     )
@@ -70,7 +70,7 @@ def test_config_round_trip(tmp_path: Path):
     masked = loaded.terminal.sandbox.credential_files[0]
     assert masked.path == ".env"
     assert masked.mode == "mask"
-    assert masked.extract == r"(?m)^API_KEY=(\\S+)$"
+    assert masked.extract == r"(?m)^API_KEY=(\S+)$"
     assert masked.on_extract_no_match == "deny"
     assert masked.mask_duplicates is True
     assert loaded.browser.width == 1280
@@ -155,7 +155,7 @@ mode = "none"
 [[sandbox.credentials.files]]
 path = ".env"
 mode = "mask"
-extract = "TOKEN=(\\\\S+)"
+extract = "TOKEN=(\\\S+)"
 """.strip(),
         encoding="utf-8",
     )
@@ -185,7 +185,7 @@ mode = "read_only"
 [[sandbox.credentials.files]]
 path = ".env"
 mode = "mask"
-extract = "TOKEN=\\\\S+"
+extract = "TOKEN=\\\S+"
 """.strip(),
         encoding="utf-8",
     )
