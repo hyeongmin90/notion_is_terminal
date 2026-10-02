@@ -139,43 +139,53 @@ def _enter_parent_page() -> str:
 
 
 def _prompt_sandbox(cwd: str) -> SandboxSettings:
-    print("\nPTY sandbox")
-    print("  1. None — current behavior")
-    print("  2. Read only — host filesystem is readable but not writable; /tmp is ephemeral")
-    print("  3. Workspace — only the selected workspace is exposed read/write")
-    while True:
-        choice = _prompt("Select", "1").strip()
-        if choice in {"1", "2", "3"}:
-            break
-        print("Invalid selection. Choose 1, 2, or 3.")
+    print("\nPTY security")
+    print("Each feature can be enabled independently.")
+    read_only = _prompt_bool("Read-only filesystem", False)
+    workspace = _prompt_bool("Restrict filesystem to one workspace", False)
 
-    enabled = choice != "1"
-    workspace_enabled = choice == "3"
-    workspace = ""
-    if workspace_enabled:
-        workspace = str(
-            Path(_prompt("Sandbox workspace", cwd)).expanduser().resolve()
+    workspace_path = ""
+    if workspace:
+        workspace_path = str(
+            Path(_prompt("Workspace path", cwd)).expanduser().resolve()
         )
+        if read_only:
+            print("  Workspace will be visible but read-only.")
+        else:
+            print("  Workspace will be visible read/write.")
 
-    deny_read: list[str] = []
-    deny_write: list[str] = []
-    if enabled:
-        deny_read = _prompt_path_list(
-            "Deny read paths (comma-separated, optional)",
-        )
-        deny_write = _prompt_path_list(
-            "Deny write paths (comma-separated, optional)",
-        )
+    masking = _prompt_bool("Enable credential file masking", False)
+    if masking:
+        print("  Add credential file rules in config.toml after setup.")
+
+    deny_read = _prompt_path_list(
+        "Deny read paths (comma-separated, optional)",
+    )
+    deny_write = _prompt_path_list(
+        "Deny write paths (comma-separated, optional)",
+    )
 
     return SandboxSettings(
-        enabled=enabled,
-        workspace_enabled=workspace_enabled,
+        read_only=read_only,
         workspace=workspace,
-        masking_enabled=False,
+        workspace_path=workspace_path,
+        masking=masking,
         deny_read=deny_read,
         deny_write=deny_write,
     )
 
+
+def _prompt_bool(label: str, default: bool) -> bool:
+    suffix = "Y/n" if default else "y/N"
+    while True:
+        value = input(f"{label} [{suffix}]: ").strip().lower()
+        if not value:
+            return default
+        if value in {"y", "yes", "true", "1"}:
+            return True
+        if value in {"n", "no", "false", "0"}:
+            return False
+        print("Please enter y or n.")
 
 def _prompt_path_list(label: str) -> list[str]:
     value = input(f"{label}: ").strip()
