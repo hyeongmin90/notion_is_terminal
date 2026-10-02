@@ -1,6 +1,6 @@
 # Terminal4GPTWeb
 
-[한국어](./README.ko.md)
+[한국어](./README.ko.md) · [Detailed installation](./INSTALL.md) · [한국어 설치 가이드](./INSTALL.ko.md)
 
 **Give GPT on the web a real terminal surface without exposing a shell server to the internet.**
 
@@ -23,7 +23,7 @@ In short:
 Notion is the shared control surface. The local daemon owns the real terminal.
 
 > [!CAUTION]
-> This is **not a sandbox**. Anything written to the Input block is executed with the permissions of the Linux user running the daemon. Use a non-root account and do not send passwords, API keys, or other secrets through Notion.
+> PTY sandboxing is **optional**. With `sandbox.enabled = false`, anything written to Input runs with the permissions of the Linux user running the daemon. Workspace/read-only isolation and credential-file masking can be enabled in config, but they do not replace normal secret-management practices.
 
 ---
 
@@ -113,87 +113,161 @@ Tested interaction patterns include Bash, Python REPL, nano, vim-style key seque
 - WSL2 Ubuntu or another Linux environment
 - Python 3.11+
 - Bash
-- A Notion internal integration
-- A Notion page shared with that integration
+- A Notion API token: Personal Access Token or Internal Connection token
+- A Notion page to use as the parent for generated Terminal4GPTWeb pages
 - **GPT / ChatGPT Web with the Notion connection enabled** for remote GPT control
 - Optional but recommended for development: **GitHub connection** in ChatGPT
 - Optional for recurring operations: ChatGPT scheduled tasks / automations, where available
+- Optional but required for sandbox mode: `bubblewrap` / `bwrap`
 
 > [!IMPORTANT]
 > Terminal4GPTWeb does not expose a standalone GPT API. GPT Web reaches the local runtime by reading and editing the generated Notion pages, so the Notion connection is required for the GPT-Web workflow.
 
 ---
 
-## Install
+## First-time installation and setup
+
+For a completely new installation, see **[INSTALL.md](./INSTALL.md)**. It covers the Notion Developer portal, token creation, parent-page access, Linux packages, Playwright, the wizard, sandbox configuration, ChatGPT's Notion connection, and the first smoke test.
+
+The short version is below.
+
+### 1. Prepare a Notion parent page
+
+Create an empty Notion page, for example:
+
+```text
+Terminal4GPTWeb Root
+```
+
+The current `t4g init` flow creates the generated control page under a parent page. You can select it by search in the wizard, so copying its URL in advance is optional.
+
+### 2. Obtain a Notion API token
+
+The **local daemon** needs a Notion API token. This is separate from the Notion app/plugin connection used by ChatGPT Web.
+
+You can use either:
+
+- a **Personal Access Token (PAT)** for a trusted personal CLI workflow; or
+- an **Internal Connection** token for a dedicated bot identity.
+
+For an Internal Connection, grant it access to the parent page and enable content permissions needed to read, insert, and update page content.
+
+Official Notion guides:
+
+- https://developers.notion.com/guides/get-started/quick-start
+- https://developers.notion.com/guides/get-started/internal-connections
+
+### 3. Install the local package
 
 ```bash
 git clone https://github.com/hyeongmin90/terminal4gptweb.git
 cd terminal4gptweb
 
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip
 pip install -e .
 playwright install chromium
 ```
 
-The second command installs the Chromium binary used by the browser controller.
-
-This installs:
+For sandbox support on Ubuntu/WSL2:
 
 ```bash
-terminal4gptweb
-t4g
+sudo apt install -y bubblewrap
+bwrap --version
 ```
 
-Legacy compatibility aliases `notion-terminal` and `nit` are also kept for now.
+Verify:
 
----
+```bash
+t4g --version
+t4g --help
+```
 
-## Setup
+If an editable install stops working after the repository directory is renamed or moved:
 
-Create a Notion internal integration and give it access to a parent page.
+```bash
+cd ~/terminal4gptweb
+pip install -e .
+hash -r
+```
 
-Then run:
+### 4. Run the setup wizard
 
 ```bash
 t4g init
 ```
 
-The wizard creates a child page with two runtime blocks:
+The wizard asks for the Notion API token and then offers:
 
 ```text
-Terminal
-[ live terminal screen ]
+Choose parent Notion page
 
-Input
-> 
+  1. Search pages
+  2. Enter URL / page ID
 ```
 
-Configuration is stored at:
+It also asks for the shell, initial working directory, terminal size and a PTY sandbox preset.
+
+The generated Notion structure is:
+
+```text
+Parent Page
+└─ Terminal4GPTWeb
+   ├─ Terminal / Input / Browser
+   ├─ Terminal4GPTWeb Help
+   └─ Browser Vision Payload
+```
+
+Local config is stored at:
 
 ```text
 ~/.config/notion_is_terminal/config.toml
 ```
 
-The config is chmod `0600` where supported.
+### 5. Validate and start
 
-The initializer creates three Notion surfaces:
-
-```text
-Terminal4GPTWeb
-├─ Terminal / Input / Browser      # live control surface
-├─ Terminal4GPTWeb Help            # human + agent usage guide
-└─ Browser Vision Payload          # machine-readable JPEG payload
+```bash
+t4g doctor
+t4g daemon start
+t4g daemon status
 ```
 
-If the whole Notion control page is deleted later, recreate all generated pages and runtime block IDs with:
+### 6. Connect Notion in ChatGPT Web
+
+This is a **second, separate connection** from the local API token.
+
+Connect Notion from ChatGPT Apps/Plugins, sign in to the account/workspace containing the generated page, and approve access to the relevant content.
+
+OpenAI setup guide:
+
+https://help.openai.com/en/articles/12532955-notion-app-and-setup-in-chatgpt
+
+### 7. First smoke test
+
+In the generated Notion Input block:
+
+```text
+> pwd
+
+```
+
+Submit with a trailing blank line (Enter twice in the Notion UI). Terminal should update and Input should reset to `>`.
+
+Browser:
+
+```text
+> :b goto https://example.com
+```
+
+Browser Status and Browser Screenshot should update.
+
+If the whole generated page is deleted later:
 
 ```bash
 t4g reinit
 t4g daemon restart
 ```
-
-The first run stores the parent Notion page ID locally. Older configs may ask for the parent page once during `reinit`.
 
 ---
 
@@ -642,6 +716,146 @@ refresh_interval = 1.5
 health_check_interval = 10.0
 show_cursor = true
 source_bashrc = true
+
+[sandbox]
+enabled = true
+workspace_enabled = true
+workspace = "/home/user/project"
+masking_enabled = true
+deny_read = []
+deny_write = [".git"]
+
+[[sandbox.credentials.files]]
+path = ".env"
+mode = "mask"
+extract = '(?m)^(?:OPENAI_API_KEY|DATABASE_URL|JWT_SECRET)=(\\S+)height = 720
+headless = true
+timeout_ms = 15000
+settle_ms = 350
+show_cursor_overlay = true
+vision_enabled = true
+vision_quality = 35
+vision_max_base64_chars = 160000
+```
+
+`NOTION_TOKEN` overrides the token stored in the config.
+
+### Sandbox switches
+
+The security features are explicit switches. You can leave policy entries in the file and disable the feature without deleting them.
+
+| Setting | Effect |
+| --- | --- |
+| `sandbox.enabled = false` | Direct, unrestricted PTY. Other sandbox settings are inactive. |
+| `enabled = true`, `workspace_enabled = false` | Read-only host filesystem; private writable `/tmp`. |
+| `enabled = true`, `workspace_enabled = true` | Only the configured workspace is exposed RW as `/workspace`; user data outside it is hidden. |
+| `masking_enabled = false` | Keep credential rules in config but do not apply them. |
+| `masking_enabled = true` | Apply configured credential file mask/deny policies. |
+
+Credential `extract` regexes must contain exactly one capture group. Only capture group 1 is replaced with a per-PTY sentinel.
+
+Without `extract`, mask mode replaces the whole file with one sentinel.
+
+`on_extract_no_match` can be:
+
+- `warn`: leave the file readable and warn (fail-open);
+- `deny`: hide the file instead (fail-closed);
+- `error`: abort PTY startup.
+
+> [!IMPORTANT]
+> Current credential masking protects file contents from the PTY, but outbound sentinel→real credential injection is not implemented yet. Programs that need a masked credential for real external authentication may fail until masking is disabled for that workflow or egress injection is implemented.
+
+After config changes:
+
+```bash
+t4g daemon restart
+```
+
+---
+
+## Diagnostics
+
+```bash
+t4g doctor
+```
+
+Checks config, Linux / WSL environment, shell path, working directory, Notion page access, and both runtime blocks.
+
+---
+
+## Security model
+
+Terminal4GPTWeb supports optional bubblewrap-based PTY isolation.
+
+Three effective modes exist:
+
+```text
+sandbox.enabled = false
+  → unrestricted PTY as the daemon user
+
+sandbox.enabled = true
+workspace_enabled = false
+  → read-only host view + private writable /tmp
+
+sandbox.enabled = true
+workspace_enabled = true
+  → workspace-only user data + read-only system paths
+```
+
+Additional controls:
+
+- `deny_read`: mask selected paths so their original content is unavailable;
+- `deny_write`: remount selected paths read-only inside an otherwise writable workspace;
+- credential file masking: replace configured secret spans with per-PTY `fake_value_<uuid>` sentinels while preserving file structure.
+
+The sandbox is not a universal secret scanner and does not currently provide network isolation or credential egress injection.
+
+Recommended precautions:
+
+- run the daemon as a dedicated non-root user;
+- prefer workspace isolation for coding workflows;
+- protect known credential files with mask or deny policies;
+- never send sudo passwords or raw credentials through Notion Input;
+- restrict access to the generated Notion page;
+- treat Docker sockets or other privileged IPC endpoints as sandbox escapes if you expose them manually.
+
+---
+
+## Limitations
+
+Notion is not a low-latency terminal transport. Terminal semantics are preserved, but every interaction still passes through the Notion API.
+
+Currently not supported as a native Notion terminal experience:
+
+- terminal mouse reporting (Playwright browser mouse control is supported)
+- sixel / kitty graphics
+- pixel graphics
+- terminal color styling
+- clipboard escape sequences
+- sub-second keystroke streaming
+- multiple simultaneous PTY sessions
+- automatic startup after WSL / Windows restart
+
+---
+
+## Development
+
+```bash
+pip install -e . pytest
+pytest
+python -m compileall -q notion_is_terminal tests
+```
+
+GitHub Actions tests Python 3.11, 3.12, and 3.13.
+
+---
+
+## License
+
+MIT
+
+on_extract_no_match = "deny"
+mask_duplicates = false
 
 [browser]
 width = 1280
