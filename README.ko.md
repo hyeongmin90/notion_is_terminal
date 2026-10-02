@@ -808,7 +808,7 @@ $ curl -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/user
 
 - 네트워크 허용 목록과 파일시스템 규칙 모두 변경 후 `t4g daemon restart`가 필요합니다.
 - masking은 설정한 파일과 환경변수만 보호하며 secret scanner가 아닙니다.
-- srt는 experimental 단계(`@anthropic-ai/sandbox-runtime` 0.0.x)이므로 `npm install -g @anthropic-ai/sandbox-runtime@0.0.78@0.0.78`처럼 버전 고정을 권장합니다.
+- Terminal4GPTWeb은 현재 `@anthropic-ai/sandbox-runtime` **0.0.78** 기준으로 검증했습니다. srt가 아직 0.0.x 계열이므로, 더 최신 버전을 이 프로젝트에서 다시 검증하기 전까지는 이 버전 사용을 권장합니다.
 
 ### 이전 bubblewrap sandbox에서 업그레이드
 
