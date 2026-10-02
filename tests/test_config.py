@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from notion_is_terminal.config import (
+from app.config import (
     AppConfig,
     CredentialEnvSettings,
     CredentialFileSettings,
