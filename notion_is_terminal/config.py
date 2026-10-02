@@ -36,7 +36,7 @@ class CredentialFileSettings:
     extract: str = ""
     on_extract_no_match: str = "warn"
     mask_duplicates: bool = False
-    inject_hosts: list[str] = field(default_factory=list)
+    inject_hosts: list[str] | None = None
 
 
 @dataclass(slots=True)
@@ -45,7 +45,7 @@ class CredentialEnvSettings:
     mode: str = "mask"
     extract: str = ""
     on_extract_no_match: str = "warn"
-    inject_hosts: list[str] = field(default_factory=list)
+    inject_hosts: list[str] | None = None
 
 
 @dataclass(slots=True)
@@ -207,9 +207,10 @@ def write_config(config: AppConfig, path: Path | str = DEFAULT_CONFIG_PATH) -> P
             f"extract = {_toml_string(item.extract)}",
             f"on_extract_no_match = {_toml_string(item.on_extract_no_match)}",
             f"mask_duplicates = {_toml_bool(item.mask_duplicates)}",
-            f"inject_hosts = {_toml_list(item.inject_hosts)}",
-            "",
         ])
+        if item.inject_hosts is not None:
+            credential_lines.append(f"inject_hosts = {_toml_list(item.inject_hosts)}")
+        credential_lines.append("")
     for item in sandbox.credential_env:
         credential_lines.extend([
             "[[sandbox.credentials.env]]",
@@ -217,9 +218,10 @@ def write_config(config: AppConfig, path: Path | str = DEFAULT_CONFIG_PATH) -> P
             f"mode = {_toml_string(item.mode)}",
             f"extract = {_toml_string(item.extract)}",
             f"on_extract_no_match = {_toml_string(item.on_extract_no_match)}",
-            f"inject_hosts = {_toml_list(item.inject_hosts)}",
-            "",
         ])
+        if item.inject_hosts is not None:
+            credential_lines.append(f"inject_hosts = {_toml_list(item.inject_hosts)}")
+        credential_lines.append("")
 
     text = "\n".join(
         [
@@ -324,7 +326,7 @@ def _load_sandbox(sandbox_raw: dict) -> SandboxSettings:
             extract=str(item.get("extract", "")),
             on_extract_no_match=str(item.get("on_extract_no_match", "warn")),
             mask_duplicates=bool(item.get("mask_duplicates", False)),
-            inject_hosts=_str_list(item.get("inject_hosts", [])),
+            inject_hosts=_optional_str_list(item, "inject_hosts"),
         )
         for item in credentials_raw.get("files", [])
         if isinstance(item, dict)
@@ -335,7 +337,7 @@ def _load_sandbox(sandbox_raw: dict) -> SandboxSettings:
             mode=str(item.get("mode", "mask")),
             extract=str(item.get("extract", "")),
             on_extract_no_match=str(item.get("on_extract_no_match", "warn")),
-            inject_hosts=_str_list(item.get("inject_hosts", [])),
+            inject_hosts=_optional_str_list(item, "inject_hosts"),
         )
         for item in credentials_raw.get("env", [])
         if isinstance(item, dict)
@@ -450,7 +452,7 @@ def _validate_credential_rule(
         raise ValueError(f"{name} mode must be 'mask' or 'deny': {label}")
     if item.on_extract_no_match not in {"warn", "deny", "error"}:
         raise ValueError(f"{name} on_extract_no_match must be warn, deny, or error: {label}")
-    for host in item.inject_hosts:
+    for host in item.inject_hosts or []:
         if not _single_line(host) or " " in host:
             raise ValueError(f"{name} inject_hosts entries must be domain patterns: {label}")
     if item.extract:
@@ -474,6 +476,12 @@ def _str_list(values: object) -> list[str]:
     if not isinstance(values, list):
         return []
     return [str(value) for value in values]
+
+
+def _optional_str_list(raw: dict, key: str) -> list[str] | None:
+    if key not in raw:
+        return None
+    return _str_list(raw.get(key))
 
 
 def _validate_browser(settings: BrowserSettings) -> None:
