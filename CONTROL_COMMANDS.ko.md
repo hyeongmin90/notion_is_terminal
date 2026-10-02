@@ -1,6 +1,6 @@
 # Terminal4GPTWeb 제어 명령 전체 레퍼런스
 
-[English](./CONTROL_COMMANDS.md) · [메인 README](./README.ko.md)
+[English](./CONTROL_COMMANDS.md) · [메인 README](./README.md)
 
 이 문서는 Terminal4GPTWeb에서 사용할 수 있는 **모든 제어 명령**을 코드 기준으로 정리한 레퍼런스입니다.
 
