@@ -324,7 +324,7 @@ Notion page title
 로컬 설정:
 
 ```text
-~/.config/notion_is_terminal/config.toml
+~/.config/t4g/config.toml
 ```
 
 runtime:
