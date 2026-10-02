@@ -793,8 +793,9 @@ $ curl -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/user
   → srt 프록시가 sentinel을 실제 값으로 치환 → api.github.com은 실제 토큰을 받음
 ```
 
-- `mode = "mask"`: 값이 세션마다 새로 만든 `fake_value_<uuid>`로 바뀝니다. 실제 값은 해당 credential의 `inject_hosts`(기본값: 허용된 모든 도메인)로 가는 요청에서만 치환되므로, 한 credential이 다른 credential의 host로 새어 나가지 않습니다.
-- `mode = "deny"`: 파일은 읽을 수 없고, 환경변수는 제거됩니다.
+- `mode = "mask"`: 값이 세션마다 새로 만든 `fake_value_<uuid>`로 바뀝니다. 실제 값은 해당 credential의 `inject_hosts`로 가는 요청에서만 치환됩니다. `inject_hosts`를 생략하면 srt가 모든 `allowed_domains`를 기본 범위로 사용합니다.
+- `mode = "deny"`: 파일은 읽을 수 없고, 환경변수는 제거됩니다. credential을 sandbox에서 사용하거나 외부로 주입할 수 없게 하려면 이 모드를 사용합니다.
+- 현재 srt는 `mode = "mask"`에서 `inject_hosts = []`를 거부합니다. Terminal4GPTWeb도 이를 설정 오류로 처리해 빈 배열이 의도치 않게 전체 허용으로 넓어지는 것을 막습니다.
 - `extract`: 정규식의 capture group 1만 masking하고 나머지는 그대로 둡니다(정확히 하나의 group 필요). 예를 들어 `DATABASE_URL` 안의 비밀번호만 가릴 수 있습니다. `extract`가 없으면 파일이나 값 전체를 바꿉니다.
 - `on_extract_no_match`: `warn`(그대로 노출, fail-open), `deny`(숨김, fail-closed), `error`(시작 거부)
 - masking을 쓰려면 `tls_terminate = true`가 필요합니다. 그래야 HTTPS 요청 안에서도 치환되며, srt가 sandbox에 CA 신뢰 환경변수(`SSL_CERT_FILE` 등)를 설정합니다. `allow_plaintext_inject = true`는 이를 명시적으로 끄는 옵션으로, 평문 HTTP 요청에만 실제 값을 넣습니다.

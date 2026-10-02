@@ -379,6 +379,31 @@ def test_credentials_translate_to_srt_rules(tmp_path):
     }
 
 
+def test_omitted_inject_hosts_is_omitted_from_srt_rule(tmp_path):
+    settings, cwd = _settings(
+        tmp_path,
+        enabled=True,
+        tls_terminate=True,
+        credential_env=[CredentialEnvSettings(name="TOKEN")],
+    )
+
+    rule = build_srt_settings(settings, cwd=cwd)["credentials"]["envVars"][0]
+
+    assert rule == {"name": "TOKEN", "mode": "mask"}
+
+
+def test_empty_inject_hosts_is_rejected_before_srt(tmp_path):
+    settings, cwd = _settings(
+        tmp_path,
+        enabled=True,
+        tls_terminate=True,
+        credential_env=[CredentialEnvSettings(name="TOKEN", inject_hosts=[])],
+    )
+
+    with pytest.raises(ValueError, match="empty injectHosts"):
+        build_srt_settings(settings, cwd=cwd)
+
+
 def test_plaintext_inject_opt_in_is_forwarded(tmp_path):
     settings, cwd = _settings(
         tmp_path,

@@ -65,7 +65,8 @@ def test_config_round_trip(tmp_path: Path):
                     CredentialEnvSettings(
                         name="GITHUB_TOKEN",
                         inject_hosts=["api.github.com"],
-                    )
+                    ),
+                    CredentialEnvSettings(name="DEFAULT_SCOPE"),
                 ],
             ),
         ),
@@ -103,11 +104,14 @@ def test_config_round_trip(tmp_path: Path):
     assert masked.on_extract_no_match == "deny"
     assert masked.mask_duplicates is True
     assert masked.inject_hosts == ["api.example.com"]
-    assert len(sandbox.credential_env) == 1
+    assert len(sandbox.credential_env) == 2
     env = sandbox.credential_env[0]
     assert env.name == "GITHUB_TOKEN"
     assert env.mode == "mask"
     assert env.inject_hosts == ["api.github.com"]
+    default_scope = sandbox.credential_env[1]
+    assert default_scope.name == "DEFAULT_SCOPE"
+    assert default_scope.inject_hosts is None
     assert loaded.browser.width == 1280
     assert loaded.browser.height == 720
 
@@ -350,6 +354,33 @@ path = "~/.ssh"
 mode = "deny"
 """)
     assert sandbox.credential_files[0].mode == "deny"
+
+
+def test_empty_inject_hosts_is_rejected_for_mask_mode(tmp_path: Path):
+    with pytest.raises(ValueError, match="inject_hosts cannot be empty"):
+        _load(tmp_path, """
+[sandbox]
+enabled = true
+tls_terminate = true
+
+[[sandbox.credentials.env]]
+name = "GITHUB_TOKEN"
+mode = "mask"
+inject_hosts = []
+""")
+
+
+def test_omitted_inject_hosts_uses_srt_default_scope(tmp_path: Path):
+    sandbox = _load(tmp_path, """
+[sandbox]
+enabled = true
+tls_terminate = true
+
+[[sandbox.credentials.env]]
+name = "GITHUB_TOKEN"
+mode = "mask"
+""")
+    assert sandbox.credential_env[0].inject_hosts is None
 
 
 def test_domain_entries_must_not_contain_spaces(tmp_path: Path):
