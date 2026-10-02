@@ -683,6 +683,12 @@ Browser Status가 `failed`이면:
 - Vision payload가 너무 큼 → `browser.width` / `browser.height`를 줄이거나 `vision_max_base64_chars` 조정
 - **srt sandbox 내부에서 실행한 local server**는 Playwright browser가 sandbox 밖에서 실행되므로 직접 접근할 수 없음
 
+### 현재 Browser 제어 범위
+
+현재 Notion command surface는 **하나의 persistent page**를 viewport mouse/keyboard 방식으로 조작합니다. CSS selector/DOM query 기반 command, popup/new tab 자동 전환, file chooser/upload command, download 관리는 아직 제공하지 않습니다. 사이트가 별도 tab/window를 열어도 그 페이지가 자동으로 제어 대상으로 전환되지는 않습니다.
+
+Playwright browser는 PTY process와 독립적으로 실행됩니다. 따라서 SRT PTY sandbox를 켜도 Playwright 자체가 그 sandbox 내부로 들어가는 것은 아닙니다.
+
 ### Browser 설정
 
 ```toml
