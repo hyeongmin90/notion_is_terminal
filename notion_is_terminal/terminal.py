@@ -199,20 +199,16 @@ def prepare_credential_masks(
     store: CredentialMaskStore,
 ) -> tuple[list[MaskedFileBind], list[tuple[Path, Path]]]:
     """Build Claude-style fake-file binds and fail-closed deny fallbacks."""
-    if not settings.sandbox.enabled or not settings.sandbox.masking_enabled:
+    if not settings.sandbox.masking:
         return [], []
 
     entries = settings.sandbox.credential_files
     if not entries:
         return [], []
 
-    mode = settings.sandbox.mode
-    if mode == "none":
-        raise RuntimeError("Credential file masking requires an enabled PTY sandbox")
-
     workspace = (
-        Path(settings.sandbox.workspace or settings.cwd).expanduser().resolve()
-        if mode == "workspace"
+        Path(settings.sandbox.workspace_path or settings.cwd).expanduser().resolve()
+        if settings.sandbox.workspace
         else None
     )
     base = workspace if workspace is not None else cwd
@@ -233,7 +229,6 @@ def prepare_credential_masks(
 
         target_path = _host_path_to_sandbox(
             real_path,
-            mode=mode,
             workspace=workspace,
         )
 
@@ -294,10 +289,9 @@ def prepare_credential_masks(
 def _host_path_to_sandbox(
     host_path: Path,
     *,
-    mode: str,
     workspace: Path | None,
 ) -> Path:
-    if mode != "workspace":
+    if workspace is None:
         return host_path
 
     assert workspace is not None
@@ -351,7 +345,7 @@ def build_sandbox_launch(
     masked_file_binds: list[MaskedFileBind] | None = None,
     credential_deny_read: list[tuple[Path, Path]] | None = None,
 ) -> SandboxLaunch:
-    mode = settings.sandbox.mode
+    sandbox = settings.sandbox
     shell_path = str(shell)
 
     if shell.name == "bash" and rcfile is not None:
@@ -359,7 +353,7 @@ def build_sandbox_launch(
     else:
         direct_shell_argv = [shell_path, "-i"]
 
-    if mode == "none":
+    if not sandbox.active:
         return SandboxLaunch(
             executable=shell_path,
             argv=direct_shell_argv,
@@ -369,8 +363,9 @@ def build_sandbox_launch(
     bwrap = bwrap_path or shutil.which("bwrap")
     if not bwrap:
         raise RuntimeError(
-            "PTY sandbox requires bubblewrap (bwrap). Install the 'bubblewrap' package "
-            "or set sandbox.enabled = false."
+            "PTY sandbox features require bubblewrap (bwrap). Install the "
+            "'bubblewrap' package or disable read_only, workspace, masking, "
+            "deny_read, and deny_write."
         )
 
     args = [
@@ -380,25 +375,29 @@ def build_sandbox_launch(
     ]
 
     workspace: Path | None = None
-    if mode == "read_only":
-        args.extend(["--ro-bind", "/", "/"])
-        sandbox_cwd = str(cwd)
-        sandbox_home: str | None = None
-        shell_in_sandbox = shell_path
-    elif mode == "workspace":
-        workspace = Path(settings.sandbox.workspace or settings.cwd).expanduser().resolve()
+    policy_scope = "host"
+
+    if sandbox.workspace:
+        workspace = Path(sandbox.workspace_path or settings.cwd).expanduser().resolve()
         if not workspace.is_dir():
             raise FileNotFoundError(f"Sandbox workspace does not exist: {workspace}")
 
         _append_workspace_system_mounts(args)
-        args.extend(["--bind", str(workspace), str(SANDBOX_WORKSPACE)])
+        workspace_bind = "--ro-bind" if sandbox.read_only else "--bind"
+        args.extend([workspace_bind, str(workspace), str(SANDBOX_WORKSPACE)])
         sandbox_cwd = str(SANDBOX_WORKSPACE)
-        sandbox_home = str(SANDBOX_HOME)
+        sandbox_home: str | None = str(SANDBOX_HOME)
         shell_in_sandbox = _map_workspace_executable(shell, workspace)
+        policy_scope = "workspace"
     else:
-        raise ValueError(f"Unsupported sandbox mode: {mode}")
+        root_bind = "--ro-bind" if sandbox.read_only else "--bind"
+        args.extend([root_bind, "/", "/"])
+        sandbox_cwd = str(cwd)
+        sandbox_home = None
+        shell_in_sandbox = shell_path
 
-    # Replace host proc/dev/tmp with sandbox-owned mounts. Network remains shared.
+    # Use sandbox-owned proc/dev/tmp whenever bubblewrap is active.
+    # Network is intentionally still shared with the host.
     args.extend([
         "--proc", "/proc",
         "--dev", "/dev",
@@ -414,8 +413,8 @@ def build_sandbox_launch(
         shell_argv = [shell_in_sandbox, "-i"]
 
     deny_write = _resolve_policy_paths(
-        settings.sandbox.deny_write,
-        mode=mode,
+        sandbox.deny_write,
+        mode=policy_scope,
         cwd=cwd,
         workspace=workspace,
     )
@@ -426,16 +425,14 @@ def build_sandbox_launch(
         args.extend(["--ro-bind", str(masked.fake_path), str(masked.target_path)])
 
     deny_read = _resolve_policy_paths(
-        settings.sandbox.deny_read,
-        mode=mode,
+        sandbox.deny_read,
+        mode=policy_scope,
         cwd=cwd,
         workspace=workspace,
     )
     deny_read.extend(credential_deny_read or [])
     if deny_read:
         mask_file, mask_dir = _sandbox_mask_paths()
-        # Apply deeper entries first so a denied parent can never be reopened by
-        # a more specific child mount.
         deny_read.sort(key=lambda pair: len(pair[1].parts), reverse=True)
         for host_path, sandbox_path in deny_read:
             source = mask_dir if host_path.is_dir() else mask_file
@@ -448,7 +445,6 @@ def build_sandbox_launch(
         cwd=sandbox_cwd,
         home=sandbox_home,
     )
-
 
 def _append_workspace_system_mounts(args: list[str]) -> None:
     usr = Path("/usr")
@@ -565,8 +561,7 @@ class PTYSession:
         masked_file_binds: list[MaskedFileBind] = []
         credential_deny_read: list[tuple[Path, Path]] = []
         if (
-            self.settings.sandbox.enabled
-            and self.settings.sandbox.masking_enabled
+            self.settings.sandbox.masking
             and self.settings.sandbox.credential_files
         ):
             self._credential_store = CredentialMaskStore()
@@ -600,7 +595,7 @@ class PTYSession:
 
         pid, master_fd = pty.fork()
         if pid == 0:
-            if self.settings.sandbox.mode == "none":
+            if not self.settings.sandbox.active:
                 os.chdir(cwd)
 
             env = os.environ.copy()
