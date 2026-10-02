@@ -1,4 +1,4 @@
-from app.protocol import InputKind, decode_escapes, extract_submission
+from terminal4gptweb.protocol import InputKind, decode_escapes, extract_submission
 
 
 PROMPT = "> "
