@@ -12,6 +12,27 @@ It covers:
 - browser observation/Vision rules;
 - local `t4g` CLI commands.
 
+> [!IMPORTANT]
+> Control syntax such as `:k ENTER`, `:c C`, and `:b ...` must be submitted as a **separate Terminal4GPTWeb Input action**.
+> It is not an inline escape syntax that can be appended to ordinary text.
+>
+> Wrong:
+>
+> ```text
+> > hello :k ENTER
+> ```
+>
+> Correct:
+>
+> ```text
+> > hello
+>
+> # after that input is processed, submit a new Input action:
+> > :k ENTER
+> ```
+>
+> For a TUI such as Codex or Claude Code, send the text first, then send `:k ENTER` by itself if a real Enter key is needed.
+
 ---
 
 ## 1. Input submission
@@ -214,6 +235,8 @@ Examples:
 ```
 
 This is especially useful for TUIs that distinguish pasted text from a real Enter key.
+
+`:k ENTER` must be a separate Input submission. Do not append it to the text being sent to the TUI. Send the text first, wait for that Input action to finish, then submit `:k ENTER` alone.
 
 ---
 

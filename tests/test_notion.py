@@ -231,6 +231,7 @@ def test_help_page_contains_agent_commands_and_recovery():
     assert "Browser Control Loop" in text
     assert "STALE_OBSERVATION" in text
     assert "click field → wait for ready → type" in text
+    assert "do not append :k ENTER to ordinary text" in text
     assert "t4g reinit" in text
 
 
