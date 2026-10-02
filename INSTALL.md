@@ -1,6 +1,6 @@
 # Terminal4GPTWeb installation and first-time setup
 
-[한국어](./INSTALL.ko.md) · [Main README](./README.md) · [GPT Bootstrap Prompt](./GPT_PROMPT.md) · [Control Command Reference](./CONTROL_COMMANDS.md)
+[한국어](./INSTALL.ko.md) · [Main README](./README.en.md) · [GPT Bootstrap Prompt](./GPT_PROMPT.md) · [Control Command Reference](./CONTROL_COMMANDS.md)
 
 This guide walks through a clean installation from an empty machine/workspace to the first GPT Web command.
 
@@ -360,4 +360,4 @@ The saved parent page is reused. Older configs without a saved parent will show 
 - restrict access to the generated Notion control page
 - remember that masking protects only configured files/variables, and only HTTP(S) traffic gets the real value
 
-See [README.md](./README.md) for the full feature and command reference.
+See [README.md](./README.en.md) for the full feature and command reference.
