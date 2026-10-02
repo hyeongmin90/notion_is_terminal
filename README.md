@@ -673,6 +673,12 @@ Common cases:
 - Vision payload too large → reduce `browser.width` / `browser.height` or adjust `vision_max_base64_chars`.
 - A local server started **inside the srt sandbox** is not reachable by this Playwright browser because the browser runs outside the sandbox network namespace.
 
+### Current browser-control scope
+
+The current Notion command surface controls **one persistent page** through viewport mouse/keyboard actions. It does not currently expose CSS-selector/DOM-query commands, automatic popup/new-tab switching, file chooser/upload commands, or download management. If a site opens a separate tab/window, that new page is not automatically adopted as the controlled page.
+
+The Playwright browser is independent of the PTY process. In particular, enabling the SRT PTY sandbox does not place Playwright inside that sandbox.
+
 ### Browser settings
 
 ```toml
