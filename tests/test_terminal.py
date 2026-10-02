@@ -4,14 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from notion_is_terminal import sandbox as sandbox_module
-from notion_is_terminal.config import (
+from app import sandbox as sandbox_module
+from app.config import (
     CredentialEnvSettings,
     CredentialFileSettings,
     SandboxSettings,
     TerminalSettings,
 )
-from notion_is_terminal.sandbox import (
+from app.sandbox import (
     SandboxUnavailableError,
     build_shell_launch,
     build_srt_settings,
