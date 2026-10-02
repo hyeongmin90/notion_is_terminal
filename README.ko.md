@@ -810,16 +810,6 @@ $ curl -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/user
 - masking은 설정한 파일과 환경변수만 보호하며 secret scanner가 아닙니다.
 - Terminal4GPTWeb은 현재 `@anthropic-ai/sandbox-runtime` **0.0.78** 기준으로 검증했습니다. srt가 아직 0.0.x 계열이므로, 더 최신 버전을 이 프로젝트에서 다시 검증하기 전까지는 이 버전 사용을 권장합니다.
 
-### 이전 bubblewrap sandbox에서 업그레이드
-
-이전 버전은 bubblewrap sandbox를 직접 구성했고 `masking = true`를 사용했습니다. 이런 config를 불러오면:
-
-- `enabled` 키가 없고 제한 옵션(`read_only`, `workspace`, `masking`, `deny_read`, `deny_write`)이 하나라도 켜져 있던 config는 `enabled = true`로 읽혀 계속 sandbox(이제 srt) 안에서 실행됩니다.
-- `masking` 키는 없어졌고, sandbox가 켜져 있으면 credential 규칙이 항상 적용됩니다.
-- `mode = "mask"` 규칙이 있으면 `tls_terminate = true`(또는 `allow_plaintext_inject = true`)를 추가해야 합니다. 없으면 명시적인 오류와 함께 config 로드가 실패합니다.
-- 이제 네트워크도 제한되므로 작업에 필요한 도메인을 `allowed_domains`에 추가하세요.
-- workspace 모드는 workspace를 `/workspace`로 옮기지 않고 실제 경로를 그대로 사용합니다.
-
 ---
 
 ## 설정
@@ -967,12 +957,10 @@ masking은 universal secret scanner가 아니며, 설정한 파일과 환경변�
 
 현재 회귀 테스트에는 다음이 포함됩니다.
 
-- config parsing 및 legacy config migration
 - Search Page / URL Parent Page wizard
 - persistent PTY와 terminal control
 - sandbox on/off 실행 경로와 `srt` 미설치 오류
 - read-only / workspace / allow-write / deny 규칙, 네트워크 허용 목록, credential 규칙의 srt settings 변환
-- 기존 sandbox config의 `sandbox.enabled` 마이그레이션
 - Notion runtime block 처리와 browser control helper
 
 GitHub Actions에서는 Python 3.11, 3.12, 3.13으로 전체 테스트를 실행합니다.
