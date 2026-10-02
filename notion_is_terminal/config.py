@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,11 +30,21 @@ class NotionSettings:
 
 
 @dataclass(slots=True)
+class CredentialFileSettings:
+    path: str
+    mode: str = "mask"
+    extract: str = ""
+    on_extract_no_match: str = "warn"
+    mask_duplicates: bool = False
+
+
+@dataclass(slots=True)
 class SandboxSettings:
     mode: str = "none"
     workspace: str = ""
     deny_read: list[str] = field(default_factory=list)
     deny_write: list[str] = field(default_factory=list)
+    credential_files: list[CredentialFileSettings] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -104,11 +115,25 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         browser_vision_page_url=str(notion_raw.get("browser_vision_page_url", "")),
     )
 
+    credentials_raw = sandbox_raw.get("credentials", {})
+    credential_files = [
+        CredentialFileSettings(
+            path=str(item.get("path", "")),
+            mode=str(item.get("mode", "mask")),
+            extract=str(item.get("extract", "")),
+            on_extract_no_match=str(item.get("on_extract_no_match", "warn")),
+            mask_duplicates=bool(item.get("mask_duplicates", False)),
+        )
+        for item in credentials_raw.get("files", [])
+        if isinstance(item, dict)
+    ]
+
     sandbox = SandboxSettings(
         mode=str(sandbox_raw.get("mode", "none")),
         workspace=str(sandbox_raw.get("workspace", "")),
         deny_read=[str(value) for value in sandbox_raw.get("deny_read", [])],
         deny_write=[str(value) for value in sandbox_raw.get("deny_write", [])],
+        credential_files=credential_files,
     )
 
     terminal = TerminalSettings(
@@ -149,6 +174,18 @@ def write_config(config: AppConfig, path: Path | str = DEFAULT_CONFIG_PATH) -> P
     config_path = Path(path).expanduser()
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
+    credential_lines: list[str] = []
+    for item in config.terminal.sandbox.credential_files:
+        credential_lines.extend([
+            "[[sandbox.credentials.files]]",
+            f"path = {_toml_string(item.path)}",
+            f"mode = {_toml_string(item.mode)}",
+            f"extract = {_toml_string(item.extract)}",
+            f"on_extract_no_match = {_toml_string(item.on_extract_no_match)}",
+            f"mask_duplicates = {'true' if item.mask_duplicates else 'false'}",
+            "",
+        ])
+
     text = "\n".join(
         [
             "[notion]",
@@ -187,6 +224,7 @@ def write_config(config: AppConfig, path: Path | str = DEFAULT_CONFIG_PATH) -> P
             f"deny_read = {json.dumps(config.terminal.sandbox.deny_read, ensure_ascii=False)}",
             f"deny_write = {json.dumps(config.terminal.sandbox.deny_write, ensure_ascii=False)}",
             "",
+            *credential_lines,
             "[browser]",
             f"width = {config.browser.width}",
             f"height = {config.browser.height}",
@@ -247,6 +285,30 @@ def _validate_sandbox(settings: SandboxSettings) -> None:
         for value in values:
             if not value or "\x00" in value or "\n" in value or "\r" in value:
                 raise ValueError(f"{name} entries must be non-empty single-line paths")
+
+    if settings.credential_files and settings.mode == "none":
+        raise ValueError("sandbox credential masking requires read_only or workspace mode")
+
+    for item in settings.credential_files:
+        if not item.path or any(ch in item.path for ch in ("\x00", "\n", "\r")):
+            raise ValueError("sandbox.credentials.files path must be a non-empty single-line path")
+        if item.mode not in {"mask", "deny"}:
+            raise ValueError("sandbox.credentials.files mode must be 'mask' or 'deny'")
+        if item.on_extract_no_match not in {"warn", "deny", "error"}:
+            raise ValueError(
+                "sandbox.credentials.files on_extract_no_match must be warn, deny, or error"
+            )
+        if item.extract:
+            try:
+                pattern = re.compile(item.extract)
+            except re.error as exc:
+                raise ValueError(
+                    f"Invalid sandbox credential extract regex for {item.path}: {exc}"
+                ) from exc
+            if pattern.groups != 1:
+                raise ValueError(
+                    f"sandbox credential extract regex must contain exactly one capture group: {item.path}"
+                )
 
 
 def _validate_browser(settings: BrowserSettings) -> None:
