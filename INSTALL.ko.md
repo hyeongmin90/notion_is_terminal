@@ -492,10 +492,11 @@ DATABASE_URL=fake_value_<uuid>
 PORT=8080
 ```
 
-환경변수도 마찬가지로 `echo $GITHUB_TOKEN`은 `fake_value_<uuid>`를 출력합니다. 프로그램이 이 값을 담아 `inject_hosts`(기본값: 허용된 모든 도메인)로 HTTP(S) 요청을 보내면, srt 프록시가 요청이 나가는 시점에 실제 값으로 바꿉니다.
+환경변수도 마찬가지로 `echo $GITHUB_TOKEN`은 `fake_value_<uuid>`를 출력합니다. 프로그램이 이 값을 담아 `inject_hosts`로 HTTP(S) 요청을 보내면, srt 프록시가 요청이 나가는 시점에 실제 값으로 바꿉니다. `inject_hosts`를 생략하면 srt는 모든 `allowed_domains`를 기본 범위로 사용합니다.
 
 - `extract`의 **capture group 1**만 masking됩니다(정확히 하나의 group 필요). 생략하면 파일/값 전체가 바뀝니다.
-- `mode = "deny"`: 파일은 읽을 수 없고, 환경변수는 제거됩니다.
+- `mode = "deny"`: 파일은 읽을 수 없고, 환경변수는 제거됩니다. credential을 sandbox에서 사용하거나 외부로 주입할 수 없게 하려면 이 모드를 사용합니다.
+- 현재 srt는 `mode = "mask"`에서 `inject_hosts = []`를 거부합니다. Terminal4GPTWeb도 이를 설정 오류로 처리해 빈 배열이 의도치 않게 전체 허용으로 넓어지는 것을 막습니다.
 - `on_extract_no_match`: `warn`(그대로 노출, fail-open), `deny`(숨김, fail-closed), `error`(시작 거부)
 - HTTPS 요청에서 치환하려면 `tls_terminate = true`가 필요합니다. `allow_plaintext_inject = true`는 이를 명시적으로 끄는 옵션이며 평문 HTTP에만 치환합니다.
 - SSH, DB 프로토콜 등 HTTP가 아닌 연결에는 가짜 값이 그대로 전달됩니다.
