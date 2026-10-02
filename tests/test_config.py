@@ -44,6 +44,7 @@ def test_config_round_trip(tmp_path: Path):
                 read_only=False,
                 workspace=True,
                 workspace_path="/tmp/project",
+                allow_read=["~/.nvm"],
                 allow_write=["~/.cache"],
                 deny_read=["secrets/"],
                 deny_write=[".git"],
@@ -86,6 +87,7 @@ def test_config_round_trip(tmp_path: Path):
     assert sandbox.workspace is True
     assert sandbox.mode == "workspace"
     assert sandbox.workspace_path == "/tmp/project"
+    assert sandbox.allow_read == ["~/.nvm"]
     assert sandbox.allow_write == ["~/.cache"]
     assert sandbox.deny_read == ["secrets/"]
     assert sandbox.deny_write == [".git"]

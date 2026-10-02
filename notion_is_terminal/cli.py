@@ -195,6 +195,7 @@ def _sandbox_smoke_test(config) -> tuple[bool, str]:
     from .sandbox import (
         build_srt_settings,
         require_sandbox_dependencies,
+        srt_package_root,
         workspace_dir,
         write_srt_settings,
     )
@@ -206,7 +207,11 @@ def _sandbox_smoke_test(config) -> tuple[bool, str]:
         srt = require_sandbox_dependencies(terminal.sandbox)
         with tempfile.TemporaryDirectory(prefix="t4g-doctor-") as tmp:
             settings_path = write_srt_settings(
-                build_srt_settings(terminal, cwd=cwd),
+                build_srt_settings(
+                    terminal,
+                    cwd=cwd,
+                    readable_paths=[srt_package_root(srt)],
+                ),
                 Path(tmp) / "srt-settings.json",
             )
             result = subprocess.run(

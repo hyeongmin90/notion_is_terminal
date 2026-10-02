@@ -16,6 +16,7 @@ from notion_is_terminal.sandbox import (
     build_shell_launch,
     build_srt_settings,
     descendant_pids,
+    srt_package_root,
 )
 
 
@@ -153,6 +154,49 @@ def test_workspace_launch_runs_in_workspace(tmp_path, fake_tools):
     assert launch.cwd == str(other)
 
 
+def test_workspace_launch_keeps_srt_package_readable(tmp_path, monkeypatch):
+    # srt installed under the home directory (e.g. nvm) runs its seccomp
+    # helper from the package inside the sandbox, so workspace mode must
+    # not hide it.
+    package = tmp_path / "home" / ".nvm" / "lib" / "node_modules" / "@anthropic-ai" / "sandbox-runtime"
+    (package / "dist").mkdir(parents=True)
+    (package / "dist" / "cli.js").write_text("")
+    bin_dir = tmp_path / "home" / ".nvm" / "bin"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "srt").symlink_to(package / "dist" / "cli.js")
+    paths = {
+        "srt": str(bin_dir / "srt"),
+        "bwrap": "/usr/bin/bwrap",
+        "socat": "/usr/bin/socat",
+        "rg": "/usr/bin/rg",
+        "script": "/usr/bin/script",
+    }
+    monkeypatch.setattr(sandbox_module.shutil, "which", lambda name: paths.get(name))
+    settings, workspace = _settings(tmp_path, enabled=True, workspace=True)
+    settings_path = tmp_path / "srt.json"
+
+    build_shell_launch(
+        settings,
+        cwd=workspace,
+        shell=Path("/bin/bash"),
+        rcfile=None,
+        srt_settings_path=settings_path,
+    )
+
+    allow_read = json.loads(settings_path.read_text())["filesystem"]["allowRead"]
+    assert str(package) in allow_read
+
+
+def test_srt_package_root_follows_bin_symlink(tmp_path):
+    package = tmp_path / "sandbox-runtime"
+    (package / "dist").mkdir(parents=True)
+    (package / "dist" / "cli.js").write_text("")
+    link = tmp_path / "srt"
+    link.symlink_to(package / "dist" / "cli.js")
+
+    assert srt_package_root(str(link)) == package.resolve()
+
+
 def test_missing_workspace_is_rejected(tmp_path, fake_tools):
     settings, cwd = _settings(
         tmp_path,
@@ -213,6 +257,20 @@ def test_workspace_mode_hides_user_data_and_rebinds_workspace(tmp_path, monkeypa
     assert filesystem["denyRead"] == ["/home"]
     assert filesystem["allowRead"] == [str(workspace), str(rcfile)]
     assert filesystem["allowWrite"] == [str(workspace)]
+
+
+def test_allow_read_is_forwarded(tmp_path):
+    settings, workspace = _settings(
+        tmp_path,
+        enabled=True,
+        workspace=True,
+        allow_read=["~/.nvm", "tools"],
+    )
+
+    allow_read = build_srt_settings(settings, cwd=workspace)["filesystem"]["allowRead"]
+
+    assert str(Path.home() / ".nvm") in allow_read
+    assert str(workspace / "tools") in allow_read
 
 
 def test_workspace_read_only_mode_exposes_workspace_without_writes(tmp_path):

@@ -212,6 +212,7 @@ srt_path = ""             # empty: srt on PATH
 read_only = false
 workspace = true
 workspace_path = "/home/user/project"
+allow_read = ["~/.nvm"]       # tools under $HOME that must stay visible in workspace mode
 allow_write = ["~/.cache"]
 deny_read = []
 deny_write = [".git"]

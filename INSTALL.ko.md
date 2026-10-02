@@ -364,6 +364,7 @@ srt_path = ""             # 비워두면 PATH의 srt 사용
 read_only = false
 workspace = true
 workspace_path = "/home/user/project"
+allow_read = ["~/.nvm"]       # workspace 모드에서도 보여야 하는 $HOME 아래 도구
 allow_write = ["~/.cache"]
 deny_read = []
 deny_write = [".git"]
@@ -430,6 +431,7 @@ workspace_path = "/home/user/project"
 - 경로는 실제 경로 그대로 보임 (`/workspace`로 바뀌지 않음)
 - 시스템 경로(`/usr`, `/etc` 등)는 읽기만 가능
 - 캐시처럼 추가로 쓸 경로는 `allow_write`에 지정 (예: `~/.cache`, `~/.npm`)
+- nvm으로 설치한 node처럼 홈 아래 도구를 쓰려면 `allow_read`에 지정 (예: `~/.nvm`). srt 자체 패키지는 자동으로 읽기 허용
 
 ### Workspace + Read-only
 

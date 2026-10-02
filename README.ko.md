@@ -738,6 +738,7 @@ srt_path = ""
 read_only = false
 workspace = true
 workspace_path = "/home/user/project"
+allow_read = ["~/.nvm"]
 allow_write = ["~/.cache"]
 deny_read = []
 deny_write = [".git"]
@@ -791,6 +792,7 @@ t4g는 시작할 때마다 `[sandbox]` 설정으로 srt settings 파일을 다�
 | `read_only = true`, `workspace = false` | host 전체 읽기 가능, `allow_write` 외에는 쓰기 불가 |
 | `read_only = false`, `workspace = true` | `/home`, `/root`, `/mnt`, `/media`를 숨기고 `workspace_path`만 보이며 쓰기 가능. 셸은 `workspace_path`에서 시작 |
 | `read_only = true`, `workspace = true` | 위와 같되 workspace도 read-only |
+| `allow_read` | 숨겨진 영역 안에서 읽기를 다시 허용할 경로. workspace 모드에서 홈 디렉터리 아래 설치한 도구(예: `~/.nvm`, `~/.local/bin`)를 쓸 때 지정. srt 자체 패키지는 자동으로 허용 |
 | `allow_write` | 추가로 쓰기 허용할 경로. 예: `~/.cache`, `~/.npm`, `~/.local` |
 | `deny_write` | 쓰기 가능한 영역 안에서 read-only로 둘 경로 (`allow_write`보다 우선) |
 | `deny_read` | 셸에서 숨길 경로 |

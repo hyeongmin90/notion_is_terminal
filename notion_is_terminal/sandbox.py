@@ -92,6 +92,19 @@ def require_sandbox_dependencies(sandbox: SandboxSettings) -> str:
     return srt
 
 
+def srt_package_root(srt: str) -> Path:
+    """Directory holding srt's package, which srt reads from inside the sandbox.
+
+    The `srt` command is usually a symlink to `<package>/dist/cli.js`; srt
+    runs helpers such as `vendor/seccomp/*/apply-seccomp` from that package
+    inside the sandbox, so it must stay readable in workspace mode.
+    """
+    resolved = Path(srt).resolve()
+    if resolved.parent.name == "dist":
+        return resolved.parent.parent
+    return resolved.parent
+
+
 def workspace_dir(settings: TerminalSettings) -> Path:
     return Path(settings.sandbox.workspace_path or settings.cwd).expanduser().resolve()
 
@@ -119,6 +132,8 @@ def build_srt_settings(
             allow_write.append(str(workspace))
     elif not sandbox.read_only:
         allow_write.append("/")
+
+    allow_read.extend(_absolute(value, base) for value in sandbox.allow_read)
 
     allow_write.extend(_absolute(value, base) for value in sandbox.allow_write)
     deny_read.extend(_absolute(value, base) for value in sandbox.deny_read)
@@ -189,11 +204,10 @@ def build_shell_launch(
     else:
         launch_cwd = cwd
 
-    document = build_srt_settings(
-        settings,
-        cwd=cwd,
-        readable_paths=[rcfile] if rcfile is not None else [],
-    )
+    readable_paths = [srt_package_root(srt)]
+    if rcfile is not None:
+        readable_paths.append(rcfile)
+    document = build_srt_settings(settings, cwd=cwd, readable_paths=readable_paths)
     settings_path = write_srt_settings(document, srt_settings_path or DEFAULT_SRT_SETTINGS_PATH)
 
     argv = [

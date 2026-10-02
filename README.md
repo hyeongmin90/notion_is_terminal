@@ -726,6 +726,7 @@ srt_path = ""
 read_only = false
 workspace = true
 workspace_path = "/home/user/project"
+allow_read = ["~/.nvm"]
 allow_write = ["~/.cache"]
 deny_read = []
 deny_write = [".git"]
@@ -779,6 +780,7 @@ t4g regenerates that srt settings file from `[sandbox]` on every start. If `srt`
 | `read_only = true`, `workspace = false` | Whole host readable, nothing writable except `allow_write` entries. |
 | `read_only = false`, `workspace = true` | `/home`, `/root`, `/mnt` and `/media` are hidden; only `workspace_path` is visible and writable. The shell starts in `workspace_path`. |
 | `read_only = true`, `workspace = true` | Same, but the workspace is read-only too. |
+| `allow_read` | Paths kept readable inside hidden areas, e.g. `~/.nvm` or `~/.local/bin` for tools installed under the home directory in workspace mode. srt's own package is always kept readable. |
 | `allow_write` | Extra writable paths, e.g. `~/.cache`, `~/.npm`, `~/.local`. |
 | `deny_write` | Paths kept read-only inside writable areas (wins over `allow_write`). |
 | `deny_read` | Paths hidden from the shell. |

@@ -60,6 +60,7 @@ class SandboxSettings:
     read_only: bool = False
     workspace: bool = False
     workspace_path: str = ""
+    allow_read: list[str] = field(default_factory=list)
     allow_write: list[str] = field(default_factory=list)
     deny_read: list[str] = field(default_factory=list)
     deny_write: list[str] = field(default_factory=list)
@@ -258,6 +259,7 @@ def write_config(config: AppConfig, path: Path | str = DEFAULT_CONFIG_PATH) -> P
             f"read_only = {_toml_bool(sandbox.read_only)}",
             f"workspace = {_toml_bool(sandbox.workspace)}",
             f"workspace_path = {_toml_string(sandbox.workspace_path)}",
+            f"allow_read = {_toml_list(sandbox.allow_read)}",
             f"allow_write = {_toml_list(sandbox.allow_write)}",
             f"deny_read = {_toml_list(sandbox.deny_read)}",
             f"deny_write = {_toml_list(sandbox.deny_write)}",
@@ -381,6 +383,7 @@ def _load_sandbox(sandbox_raw: dict) -> SandboxSettings:
         workspace_path=str(
             sandbox_raw.get("workspace_path", legacy_workspace_path)
         ),
+        allow_read=_str_list(sandbox_raw.get("allow_read", [])),
         allow_write=_str_list(sandbox_raw.get("allow_write", [])),
         deny_read=deny_read,
         deny_write=deny_write,
@@ -399,6 +402,7 @@ def _validate_sandbox(settings: SandboxSettings) -> None:
         if not workspace_path.is_absolute():
             raise ValueError("sandbox.workspace_path must be an absolute path")
     for name, values in (
+        ("sandbox.allow_read", settings.allow_read),
         ("sandbox.allow_write", settings.allow_write),
         ("sandbox.deny_read", settings.deny_read),
         ("sandbox.deny_write", settings.deny_write),
