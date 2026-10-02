@@ -1,6 +1,6 @@
 # Terminal4GPTWeb
 
-[English](./README.md)
+[English](./README.md) · [상세 설치 가이드](./INSTALL.ko.md) · [English installation](./INSTALL.md)
 
 **GPT 웹에 로컬 WSL/Linux 셸 서버를 직접 노출하지 않고도 실제 터미널 도구를 연결합니다.**
 
@@ -23,7 +23,7 @@ GPT가 Notion 커넥터를 통해 생성된 페이지를 읽고 수정할 수 �
 Notion은 GPT와 로컬 daemon이 공유하는 입출력 화면이고, 실제 터미널 세션은 로컬 daemon이 관리합니다.
 
 > [!CAUTION]
-> 이 프로젝트는 **sandbox가 아닙니다.** Input 블록에 입력된 내용은 daemon을 실행한 Linux 사용자의 권한으로 실행됩니다. root 계정으로 실행하지 말고, 비밀번호·API Key·SSH Key 같은 비밀정보를 Notion을 통해 입력하지 마세요.
+> PTY sandbox는 **선택 기능**입니다. `sandbox.enabled = false`이면 Input에 입력된 명령은 daemon을 실행한 Linux 사용자의 권한으로 그대로 실행됩니다. Workspace/read-only 격리와 credential file masking을 config에서 켤 수 있지만 일반적인 secret 관리까지 대체하지는 않습니다.
 
 ---
 
@@ -115,87 +115,165 @@ ANSI cursor 이동, 화면 지우기, scrolling, redraw sequence를 로컬에서
 - WSL2 Ubuntu 또는 Linux
 - Python 3.11+
 - Bash
-- Notion internal integration
-- integration에 공유된 Notion parent page
+- Notion API token: Personal Access Token 또는 Internal Connection token
+- 생성 페이지의 부모로 사용할 Notion page
 - GPT 웹에서 원격 제어하려면 **ChatGPT의 Notion 연결이 필수**
 - 개발 워크플로에는 **GitHub 연결 권장**
 - 반복 운영 점검에는 지원되는 경우 ChatGPT 일정/자동화 기능 사용 가능
+- sandbox 사용 시 `bubblewrap` / `bwrap` 필요
 
 > [!IMPORTANT]
 > Terminal4GPTWeb 자체가 별도의 GPT API를 제공하는 구조는 아닙니다. GPT 웹은 생성된 Notion 페이지를 읽고 수정하는 방식으로 로컬 runtime에 접근하므로 GPT 웹에서 사용할 때는 Notion 연결이 필요합니다.
 
 ---
 
-## 설치
+## 처음 설치하는 경우
+
+처음부터 설치한다면 **[INSTALL.ko.md](./INSTALL.ko.md)**를 먼저 보는 것을 권장합니다. Notion Developer portal에서 token을 만드는 과정부터 Parent Page 권한, Linux 패키지, Playwright, wizard, sandbox config, ChatGPT Notion 연결, 첫 smoke test까지 순서대로 설명합니다.
+
+아래는 전체 과정을 압축한 버전입니다.
+
+### 1. Notion Parent Page 준비
+
+Notion에 빈 페이지를 하나 만듭니다.
+
+```text
+Terminal4GPTWeb Root
+```
+
+현재 `t4g init`은 생성 페이지를 넣을 parent page를 하나 선택합니다. URL을 미리 복사하지 않아도 wizard에서 page 검색으로 선택할 수 있습니다.
+
+### 2. Notion API Token 준비
+
+**로컬 t4g daemon**이 Notion API를 호출하기 위한 token입니다. **ChatGPT 웹의 Notion 연결과는 별개**입니다.
+
+사용 가능한 방식:
+
+- 개인 신뢰 환경: **Personal Access Token (PAT)**
+- 전용 bot 권한 분리: **Internal Connection token**
+
+Internal Connection을 쓴다면 Parent Page 접근 권한을 부여하고 page content를 읽고/추가하고/수정할 수 있는 capability가 필요합니다.
+
+Notion 공식 문서:
+
+- https://developers.notion.com/guides/get-started/quick-start
+- https://developers.notion.com/guides/get-started/internal-connections
+
+### 3. 설치
 
 ```bash
 git clone https://github.com/hyeongmin90/terminal4gptweb.git
 cd terminal4gptweb
 
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip
 pip install -e .
 playwright install chromium
 ```
 
-두 번째 명령은 browser controller가 사용할 Chromium binary를 설치합니다.
-
-기본 명령은 다음과 같습니다.
+sandbox를 사용할 Ubuntu/WSL2:
 
 ```bash
-terminal4gptweb
-t4g
+sudo apt install -y bubblewrap
+bwrap --version
 ```
 
-기존 `notion-terminal`, `nit`도 당분간 호환 alias로 유지합니다.
+설치 확인:
 
----
+```bash
+t4g --version
+t4g --help
+```
 
-## 초기 설정
+프로젝트 폴더 이름이나 위치를 변경해서 editable install이 깨졌다면:
 
-Notion internal integration을 만들고 사용할 parent page를 integration에 공유합니다.
+```bash
+cd ~/terminal4gptweb
+pip install -e .
+hash -r
+```
 
-이후:
+### 4. Wizard 실행
 
 ```bash
 t4g init
 ```
 
-wizard가 다음 형태의 child page를 생성합니다.
+Notion API token을 입력한 뒤 Parent Page를:
 
 ```text
-Terminal
-[ 현재 터미널 화면 ]
+Choose parent Notion page
 
-Input
-> 
+  1. Search pages
+  2. Enter URL / page ID
 ```
 
-설정 파일은 다음 위치에 저장됩니다.
+에서 선택합니다.
+
+이어 shell, initial working directory, PTY sandbox preset, terminal 크기 등을 설정합니다.
+
+생성 구조:
+
+```text
+Parent Page
+└─ Terminal4GPTWeb
+   ├─ Terminal / Input / Browser
+   ├─ Terminal4GPTWeb Help
+   └─ Browser Vision Payload
+```
+
+설정 파일:
 
 ```text
 ~/.config/notion_is_terminal/config.toml
 ```
 
-가능한 환경에서는 권한을 `0600`으로 설정합니다.
+### 5. 진단 및 실행
 
-초기화하면 다음 3개의 Notion surface가 생성됩니다.
-
-```text
-Terminal4GPTWeb
-├─ Terminal / Input / Browser      # 실제 제어 페이지
-├─ Terminal4GPTWeb Help            # 사람 + 에이전트 사용법
-└─ Browser Vision Payload          # Vision용 JPEG payload
+```bash
+t4g doctor
+t4g daemon start
+t4g daemon status
 ```
 
-나중에 메인 Notion 페이지 자체를 삭제했다면 다음 명령으로 전체 페이지와 runtime ID를 다시 만들 수 있습니다.
+### 6. ChatGPT 웹에서 Notion 연결
+
+이것은 위의 **로컬 Notion API token과 별개의 두 번째 연결**입니다.
+
+ChatGPT의 Apps/Plugins에서 Notion을 연결하고, Terminal4GPTWeb 페이지가 있는 계정/workspace/content에 접근할 수 있도록 승인합니다.
+
+OpenAI 도움말:
+
+https://help.openai.com/ko-kr/articles/12532955-notion-app-and-setup-in-chatgpt
+
+### 7. 첫 동작 확인
+
+Notion Input:
+
+```text
+> pwd
+
+```
+
+명령 뒤 빈 줄까지 제출합니다. Notion UI에서는 Enter를 두 번 누르면 됩니다.
+
+Terminal이 갱신되고 Input이 다시 `>`로 돌아오면 정상입니다.
+
+Browser:
+
+```text
+> :b goto https://example.com
+```
+
+Browser Status와 Screenshot이 갱신되는지 확인합니다.
+
+메인 페이지 전체를 삭제했다면:
 
 ```bash
 t4g reinit
 t4g daemon restart
 ```
-
-최초 초기화 이후에는 parent Notion page ID를 로컬 config에 저장합니다. 기존 버전 config라면 `reinit` 시 parent page를 한 번 다시 물을 수 있습니다.
 
 ---
 
@@ -650,6 +728,148 @@ refresh_interval = 1.5
 health_check_interval = 10.0
 show_cursor = true
 source_bashrc = true
+
+[sandbox]
+enabled = true
+workspace_enabled = true
+workspace = "/home/user/project"
+masking_enabled = true
+deny_read = []
+deny_write = [".git"]
+
+[[sandbox.credentials.files]]
+path = ".env"
+mode = "mask"
+extract = '(?m)^(?:OPENAI_API_KEY|DATABASE_URL|JWT_SECRET)=(\\S+)height = 720
+headless = true
+timeout_ms = 15000
+settle_ms = 350
+show_cursor_overlay = true
+vision_enabled = true
+vision_quality = 35
+vision_max_base64_chars = 160000
+```
+
+환경변수 `NOTION_TOKEN`이 있으면 config의 token보다 우선합니다.
+
+### Sandbox 기능 스위치
+
+보안 설정은 config에서 명시적으로 켜고 끌 수 있습니다. 정책을 삭제하지 않고 기능만 OFF할 수도 있습니다.
+
+| 설정 | 동작 |
+| --- | --- |
+| `sandbox.enabled = false` | 기존 unrestricted PTY. 다른 sandbox 설정은 적용되지 않음 |
+| `enabled = true`, `workspace_enabled = false` | host filesystem read-only + sandbox 전용 writable `/tmp` |
+| `enabled = true`, `workspace_enabled = true` | 지정 workspace만 RW로 `/workspace`에 노출 |
+| `masking_enabled = false` | credential 규칙을 config에 남겨두되 적용하지 않음 |
+| `masking_enabled = true` | credential file mask/deny 규칙 적용 |
+
+Credential `extract` 정규식은 정확히 하나의 capture group을 가져야 합니다. **capture group 1만** per-PTY sentinel로 교체합니다.
+
+`extract`를 생략하면 해당 파일 전체를 하나의 sentinel로 바꿉니다.
+
+`on_extract_no_match`:
+
+- `warn`: 경고하고 실제 파일을 그대로 노출 — fail-open
+- `deny`: 읽기 자체를 차단 — fail-closed
+- `error`: PTY 시작 실패
+
+> [!IMPORTANT]
+> 현재 credential masking은 PTY에서 실제 값을 숨기는 단계까지 구현되어 있습니다. 외부 요청 시 sentinel을 실제 credential로 재주입하는 egress proxy/injectHosts는 아직 구현되지 않았습니다. 따라서 실제 외부 인증에 해당 credential이 필요한 프로그램은 masking이 켜진 상태에서 실패할 수 있습니다.
+
+config 수정 후:
+
+```bash
+t4g daemon restart
+```
+
+---
+
+## 진단
+
+```bash
+t4g doctor
+```
+
+config, Linux / WSL 환경, shell 경로, working directory, Notion page 접근, Terminal/Input block을 확인합니다.
+
+---
+
+## 보안
+
+Terminal4GPTWeb은 bubblewrap 기반의 **선택적 PTY sandbox**를 지원합니다.
+
+실질적인 동작은 다음 세 가지입니다.
+
+```text
+sandbox.enabled = false
+  → daemon 사용자 권한 그대로 실행
+
+sandbox.enabled = true
+workspace_enabled = false
+  → host read-only + sandbox 전용 /tmp
+
+sandbox.enabled = true
+workspace_enabled = true
+  → workspace만 사용자 데이터로 노출 + system path read-only
+```
+
+추가 제어:
+
+- `deny_read`: 지정 경로의 원본 내용을 sandbox에서 보이지 않게 함
+- `deny_write`: RW workspace 안에서도 지정 경로를 read-only로 강등
+- credential masking: 설정된 credential 값만 `fake_value_<uuid>` sentinel로 치환하면서 파일 구조 유지
+
+sandbox/masking은 universal secret scanner가 아니며 현재 network isolation과 credential egress injection은 제공하지 않습니다.
+
+권장사항:
+
+- daemon은 전용 non-root 사용자로 실행
+- 개발 작업은 가능하면 workspace isolation 사용
+- 알려진 credential 파일에는 mask 또는 deny 적용
+- sudo password/token/private key를 Notion Input에 직접 넣지 않기
+- 생성된 Notion control page의 접근 권한 제한
+- Docker socket 같은 privileged IPC를 수동으로 노출하면 sandbox 경계를 우회할 수 있다고 간주
+
+---
+
+## 한계
+
+Notion은 저지연 터미널 전송 프로토콜이 아닙니다.
+
+터미널 의미론은 유지하지만 모든 입력과 화면 갱신이 Notion API를 거치므로 로컬 터미널보다 지연이 큽니다.
+
+현재 지원하지 않거나 Notion에서 자연스럽게 표현되지 않는 기능:
+
+- 터미널 mouse reporting (Playwright browser mouse control은 지원)
+- sixel / kitty graphics
+- pixel graphics
+- terminal color styling
+- clipboard escape sequence
+- sub-second keystroke streaming
+- multiple simultaneous PTY sessions
+- WSL / Windows 재시작 후 자동 실행
+
+---
+
+## 개발
+
+```bash
+pip install -e . pytest
+pytest
+python -m compileall -q notion_is_terminal tests
+```
+
+GitHub Actions에서 Python 3.11, 3.12, 3.13을 테스트합니다.
+
+---
+
+## License
+
+MIT
+
+on_extract_no_match = "deny"
+mask_duplicates = false
 
 [browser]
 width = 1280
