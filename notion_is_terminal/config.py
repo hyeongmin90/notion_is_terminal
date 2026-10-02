@@ -29,6 +29,14 @@ class NotionSettings:
 
 
 @dataclass(slots=True)
+class SandboxSettings:
+    mode: str = "none"
+    workspace: str = ""
+    deny_read: list[str] = field(default_factory=list)
+    deny_write: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class TerminalSettings:
     shell: str = "/bin/bash"
     cwd: str = str(Path.home())
@@ -42,6 +50,7 @@ class TerminalSettings:
     health_check_interval: float = 10.0
     show_cursor: bool = True
     source_bashrc: bool = True
+    sandbox: SandboxSettings = field(default_factory=SandboxSettings)
 
 
 @dataclass(slots=True)
@@ -71,6 +80,7 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
 
     notion_raw = raw.get("notion", {})
     terminal_raw = raw.get("terminal", {})
+    sandbox_raw = raw.get("sandbox", {})
     browser_raw = raw.get("browser", {})
 
     token = os.environ.get("NOTION_TOKEN") or notion_raw.get("token", "")
@@ -94,6 +104,13 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         browser_vision_page_url=str(notion_raw.get("browser_vision_page_url", "")),
     )
 
+    sandbox = SandboxSettings(
+        mode=str(sandbox_raw.get("mode", "none")),
+        workspace=str(sandbox_raw.get("workspace", "")),
+        deny_read=[str(value) for value in sandbox_raw.get("deny_read", [])],
+        deny_write=[str(value) for value in sandbox_raw.get("deny_write", [])],
+    )
+
     terminal = TerminalSettings(
         shell=terminal_raw.get("shell", "/bin/bash"),
         cwd=terminal_raw.get("cwd", str(Path.home())),
@@ -107,6 +124,7 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
         health_check_interval=float(terminal_raw.get("health_check_interval", 10.0)),
         show_cursor=bool(terminal_raw.get("show_cursor", True)),
         source_bashrc=bool(terminal_raw.get("source_bashrc", True)),
+        sandbox=sandbox,
     )
 
     browser = BrowserSettings(
@@ -122,6 +140,7 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
     )
 
     _validate_terminal(terminal)
+    _validate_sandbox(terminal.sandbox)
     _validate_browser(browser)
     return AppConfig(notion=notion, terminal=terminal, browser=browser)
 
@@ -161,6 +180,12 @@ def write_config(config: AppConfig, path: Path | str = DEFAULT_CONFIG_PATH) -> P
             f"health_check_interval = {config.terminal.health_check_interval}",
             f"show_cursor = {'true' if config.terminal.show_cursor else 'false'}",
             f"source_bashrc = {'true' if config.terminal.source_bashrc else 'false'}",
+            "",
+            "[sandbox]",
+            f"mode = {_toml_string(config.terminal.sandbox.mode)}",
+            f"workspace = {_toml_string(config.terminal.sandbox.workspace)}",
+            f"deny_read = {json.dumps(config.terminal.sandbox.deny_read, ensure_ascii=False)}",
+            f"deny_write = {json.dumps(config.terminal.sandbox.deny_write, ensure_ascii=False)}",
             "",
             "[browser]",
             f"width = {config.browser.width}",
@@ -206,6 +231,22 @@ def _validate_terminal(settings: TerminalSettings) -> None:
         raise ValueError("terminal.refresh_interval must be >= 0.5 seconds")
     if settings.health_check_interval < 3.0:
         raise ValueError("terminal.health_check_interval must be >= 3.0 seconds")
+
+
+def _validate_sandbox(settings: SandboxSettings) -> None:
+    if settings.mode not in {"none", "read_only", "workspace"}:
+        raise ValueError("sandbox.mode must be one of: none, read_only, workspace")
+    if settings.mode == "workspace" and settings.workspace:
+        workspace = Path(settings.workspace).expanduser()
+        if not workspace.is_absolute():
+            raise ValueError("sandbox.workspace must be an absolute path")
+    for name, values in (
+        ("sandbox.deny_read", settings.deny_read),
+        ("sandbox.deny_write", settings.deny_write),
+    ):
+        for value in values:
+            if not value or "\x00" in value or "\n" in value or "\r" in value:
+                raise ValueError(f"{name} entries must be non-empty single-line paths")
 
 
 def _validate_browser(settings: BrowserSettings) -> None:
