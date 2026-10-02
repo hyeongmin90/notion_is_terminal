@@ -1,5 +1,5 @@
-from notion_is_terminal.config import TerminalSettings
-from notion_is_terminal.terminal import PTYSession
+from terminal4gptweb.config import TerminalSettings
+from terminal4gptweb.terminal import PTYSession
 
 
 def _sent_for(key: str) -> bytes:
