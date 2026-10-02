@@ -833,6 +833,28 @@ sandbox/masking은 universal secret scanner가 아니며 현재 network isolatio
 
 ---
 
+## 검증 범위
+
+현재 회귀 테스트에는 다음이 포함됩니다.
+
+- config parsing 및 legacy config migration
+- Search Page / URL Parent Page wizard
+- persistent PTY와 terminal control
+- read-only / workspace sandbox 구성
+- sandbox / workspace / masking ON/OFF 조합
+- deny-read / deny-write carve-out
+- whole-file / structured credential masking
+- duplicate masking 및 no-match warn/deny/error 정책
+- Notion runtime block 처리와 browser control helper
+
+GitHub Actions에서는 Python 3.11, 3.12, 3.13으로 전체 테스트를 실행합니다.
+
+WSL2에서는 실제 `PTYSession → pty.fork() → bubblewrap → bash` 경로로 sandbox/masking을 E2E 검증했고, Browser는 Notion을 거쳐 Playwright navigation과 Vision payload observation ID까지 smoke test했습니다.
+
+실사용 중인 Notion control page 자체를 삭제하는 것처럼 파괴적인 복구 시나리오는 매 회귀 테스트마다 실제 페이지를 지우는 대신 자동 테스트로 검증합니다.
+
+---
+
 ## 한계
 
 Notion은 저지연 터미널 전송 프로토콜이 아닙니다.
