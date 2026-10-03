@@ -908,7 +908,7 @@ def terminal_page_children(terminal_text: str, input_text: str) -> list[dict[str
         paragraph_payload("Live PTY screen. Do not edit this block manually."),
         code_block_payload(terminal_text, language="plain text"),
         heading_payload("Input"),
-        paragraph_payload("Type one action and press Enter once to submit."),
+        paragraph_payload("Type one action and press Enter once to submit. Input is executed only when the text ends with a newline; if a command remains visible here instead of running, check the missing trailing newline first."),
         code_block_payload(input_text, language="bash"),
         divider_payload(),
         heading_payload("Quick Commands"),
@@ -933,7 +933,7 @@ def help_page_children() -> list[dict[str, Any]]:
         heading_payload("For Humans"),
         paragraph_payload(
             "Use the parent Terminal4GPTWeb page. Read Terminal for current shell state and write commands in Input. "
-            "Normal shell input is submitted by pressing Enter once."
+            "Normal shell input is submitted by pressing Enter once. Merely writing command text is not enough: the Input text must end with a newline."
         ),
         bulleted_payload("Run in background: t4g daemon start"),
         bulleted_payload("Check status: t4g daemon status"),
@@ -942,6 +942,10 @@ def help_page_children() -> list[dict[str, Any]]:
         bulleted_payload("Diagnostics: t4g doctor"),
         bulleted_payload("Recreate deleted Notion pages: t4g reinit"),
         heading_payload("For GPT / Agents"),
+        callout_payload(
+            "Input submission rule: text is executed only when the actual Input content ends with a newline. In the Notion UI, press Enter once after the action. Through an API/connector, preserve a trailing \\n; for Markdown-style code-block edits, leave one blank line after the action before the closing code fence. If the command stays visible in Input instead of resetting, check this first.",
+            "↩️",
+        ),
         paragraph_payload(
             "Treat the parent page as a tool surface. Read Terminal before acting. Write exactly one command or control action to Input, "
             "wait for Input to reset, then read Terminal or Browser Status again before the next action."
