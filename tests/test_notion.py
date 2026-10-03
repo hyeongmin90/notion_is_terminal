@@ -213,6 +213,7 @@ def test_terminal_page_children_are_compact():
         and item.get(item.get("type", ""), {}).get("rich_text")
     )
     assert "For AI: Read the Terminal4GPTWeb Help page before using this control surface." in text
+    assert "Input is executed only when the text ends with a newline" in text
     assert "Quick Commands" in text
     assert "Browser open" in text
     assert "Common TUI recipes" not in text
@@ -228,6 +229,8 @@ def test_help_page_contains_agent_commands_and_recovery():
         and item.get(item.get("type", ""), {}).get("rich_text")
     )
     assert "For GPT / Agents" in text
+    assert "Input submission rule" in text
+    assert "command stays visible in Input" in text
     assert ":b click <observation_id> <x> <y>" in text
     assert "Browser Control Loop" in text
     assert "STALE_OBSERVATION" in text
