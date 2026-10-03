@@ -385,7 +385,7 @@ Playwright로 메인 화면 smoke test까지 실행해.
 5. 브라우저 좌표 action은 반드시 최신 `observation_id`를 사용합니다.
 6. Vision이 필요하면 `vision_page_url`을 읽고 `data_base64`를 JPEG로 해석한 뒤 observation ID가 일치하는지 확인합니다.
 7. Browser Status가 `failed`라면 이전 좌표를 계속 쓰지 말고 오류를 먼저 처리합니다.
-8. Input은 빈 줄로 끝나야 제출됩니다. 에이전트가 Notion API나 커넥터로 Input을 쓸 때는 끝에 **줄바꿈을 하나 더**(총 3개) 붙입니다. 커넥터가 마지막 줄바꿈 하나를 지우는 경우가 있어, 빈 줄이 없으면 명령이 Input에 그대로 남습니다.
+8. **Input 실제 텍스트는 newline으로 끝나야 실행됩니다.** 명령 문자열만 적고 마지막 줄바꿈이 없으면 daemon은 미완성 입력으로 보고 실행하지 않습니다. Notion UI에서는 명령 뒤 Enter를 한 번 누릅니다. API/커넥터에서는 실제 Input text 끝에 `\n`이 남도록 작성하고, Markdown 코드블록 형태로 수정하는 커넥터라면 명령 뒤에 빈 줄 하나를 둔 뒤 코드블록을 닫습니다. 명령이 실행되지 않고 Input에 그대로 남아 있다면 trailing newline 누락을 가장 먼저 확인합니다.
 9. Input에 `[SANDBOX UNAVAILABLE]`이 보이면 sandbox가 켜져 있는데 srt나 필요한 도구가 없는 상태입니다. 명령을 반복하지 말고 이 상태를 보고합니다.
 
 이 규칙은 생성되는 **Terminal4GPTWeb Help** Notion child page에도 같이 기록됩니다.
