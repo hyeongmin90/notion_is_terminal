@@ -373,12 +373,12 @@ For reliable agent behavior, use a strict observe → act → observe loop:
 
 1. Read **Terminal** or **Browser Status**.
 2. Write exactly one command/action to **Input**.
-3. Wait until Input resets to `>`.
+3. Wait until Input resets to an empty block.
 4. Read the refreshed output before issuing the next action.
 5. For browser coordinate actions, use only the latest `observation_id`.
 6. When Vision is needed, fetch `vision_page_url`, decode `data_base64` as JPEG, and verify that its observation ID matches Browser Status.
 7. Stop and surface the error when Browser Status is `failed`; do not continue with stale coordinates.
-8. Input is submitted only when it ends with a blank line. When an agent writes Input through the Notion API or a connector, end the text with **one extra newline** (three in total): connectors may trim one, and without the blank line the command just sits in Input.
+8. **The actual Input text must end with a newline before it is executed.** Writing only the command text without the final line break leaves it as incomplete input. In the Notion UI, press Enter once after the action. Through an API/connector, preserve a trailing `\n`; for Markdown-style code-block edits, leave one blank line after the action before closing the code block. If a command stays visible in Input instead of running, check the trailing newline first.
 9. If Input shows `[SANDBOX UNAVAILABLE]`, the sandbox is enabled but srt or one of its tools is missing; report it rather than retrying commands.
 
 This protocol is also documented in the generated **Terminal4GPTWeb Help** Notion child page.
