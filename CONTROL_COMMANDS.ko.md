@@ -48,9 +48,20 @@ Input 블록은 기본적으로 앞에 prompt 문자를 표시하지 않습니�
 pwd
 ```
 
-daemon은 Input을 polling하기 때문에 newline이 없는 미완성 입력은 실행하지 않습니다.
+daemon은 Input을 polling하기 때문에 newline이 없는 미완성 입력은 실행하지 않습니다. **Input에 명령이 보인다는 것만으로 제출된 것이 아닙니다.** 명령이 그대로 남아 있고 실행되지 않는다면 마지막 newline 누락을 먼저 확인합니다.
 
-에이전트가 Notion API/connector로 Input을 수정하는 경우 실제 전송 text 끝에 newline 하나가 유지되도록 작성합니다. 일부 connector는 마지막 newline을 제거할 수 있습니다.
+에이전트가 Notion API/connector로 Input을 수정하는 경우 실제 전송 text 끝에 newline 하나가 유지되도록 작성합니다. 실제 Input content 기준으로는 `pwd\n` 형태입니다. Markdown 코드블록 형태로 페이지를 수정하는 connector에서는 마지막 newline이 보존되도록 명령 뒤에 빈 줄 하나를 두고 코드블록을 닫는 것이 안전합니다.
+
+예:
+
+```markdown
+```bash
+pwd
+
+```
+```
+
+위 표현은 Input 코드블록의 실제 내용이 newline으로 끝나도록 하기 위한 것입니다.
 
 ### 한 번에 하나의 action
 
