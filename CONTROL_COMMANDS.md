@@ -47,9 +47,18 @@ Example:
 pwd
 ```
 
-This prevents polling from executing partially typed text.
+This prevents polling from executing partially typed text. **Seeing the command text in Input does not mean it has been submitted.** If the command remains visible and nothing runs, check for a missing trailing newline first.
 
-When an agent edits Input through a Notion API/connector, make sure the submitted action ends with a newline. Some connectors may trim a final newline.
+When an agent edits Input through a Notion API/connector, make sure the actual Input content ends with a newline, e.g. `pwd\n`. For connectors that edit the page as Markdown code blocks, leave one blank line after the action before closing the code fence so the trailing newline is preserved.
+
+Example:
+
+```markdown
+```bash
+pwd
+
+```
+```
 
 Use one action per submission:
 
