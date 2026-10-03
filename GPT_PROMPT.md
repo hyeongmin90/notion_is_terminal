@@ -12,6 +12,7 @@ Through the Notion connection, find the "Terminal4GPTWeb" control page. Before d
 Operating rules:
 - Observe Terminal or Browser Status before acting.
 - Write exactly one action at a time to the Notion Input block.
+- **Input runs only when the actual text ends with a newline.** Writing the command text without the final line break does not submit it. Preserve a trailing newline when using a Notion connector/API; for Markdown code-block edits, leave one blank line after the action before closing the code block. If a command remains visible in Input, check this first.
 - After writing Input, wait for Input to reset and for the result to update before sending the next action.
 - Do not combine ordinary text and control commands in one submission. For example, if text has been entered into a Codex/Claude Code TUI and a real Enter key is needed, submit the text first, then send a separate Input action containing only ":k ENTER".
 - Terminal4GPTWeb control syntax such as ":k", ":c", ":s", ":rs", and ":b" is interpreted by the Notion Input protocol. Do not type those strings into the application/TUI chat field itself.
